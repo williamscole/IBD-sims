@@ -1,4 +1,4 @@
-# ibdne-sims
+# IBD-sims
 
 A pipeline for generating realistic IBD segments under a range of demographic histories and mating models. Ancestry is simulated using [msprime](https://tskit.dev/msprime/docs/stable/intro.html), supporting both standard coalescent simulations and simulations that begin with an explicit Wright-Fisher pedigree for recent generations (DTWF model). IBD segments are detected from simulated genotype data using [hap-ibd](https://github.com/browning-lab/hap-ibd).
 
