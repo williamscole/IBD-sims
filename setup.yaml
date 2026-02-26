@@ -1,0 +1,16 @@
+# Path configuration for ibdne_sims pipeline
+# Set these to match your environment before running.
+
+# SNP density/MAF distribution pickle (included in repo)
+maf_pickle: ukb_snps.pkl
+
+# Path to hap-ibd jar
+hap_ibd_jar: /users/cwilli50/hap-ibd.jar
+
+# Path to IBDNe jar
+ibdne_jar: /users/cwilli50/ibdne.23Apr20.ae9.jar
+
+# Path to genetic map for chromosome 1 (GRCh37)
+# Other chromosomes are loaded by replacing "chr1" with "chr{n}"
+# Expected format: HapMap format with a "Map(cM)" column
+genetic_map_chr1: /users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr1.txt.gz
