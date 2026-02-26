@@ -1,0 +1,35 @@
+custom_demo:
+  object: ooa2
+  path: demography.py
+custom_sim:
+  object: null
+  path: null
+end_chr: 30
+filtersamples: true
+gb: 16
+gmax: 300
+gmin: 1
+hapmap_chr1: /users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr1.txt.gz
+ibdne: /users/cwilli50/ibdne.23Apr20.ae9.jar
+ibdne_only: false
+ibdne_time: --time=1:00:00
+iter: 25
+label: 'ooa2
+
+  n=120
+
+  coalescent
+
+  filtered'
+mincm: 2
+nboots: 0
+nits: 1000
+npairs: 0
+nthreads: 8
+pedigree:
+  gen_end: 25
+  mating: mono
+  pedigree_mode: false
+samples: 120
+sim_time: --time=30:00
+trimcm: 0.2

@@ -1,0 +1,60 @@
+###### Run options
+
+# Label for plotting
+label: label
+
+# Number of simulation iterations
+iter: 25
+# Memory
+gb: 6
+# time
+sim_time: --time=30:00
+
+post_process_only: false
+simulate_only: false
+run_ibdne: true
+purple_nodes: true
+
+###### Genome information
+
+# Last chromosome
+# If 22 --> will do a realistic genome simulation
+# If 30 --> will do 30 chromosomes of 100 Mb each
+# If 3 --> will do a small 10 Mb chromosome for debugging
+end_chr: 30
+hapmap_chr1: /users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr1.txt.gz
+
+##### Demographic information
+
+# For custom demographic history
+custom_demo:
+  path: null # Path to python file containing the demo history
+  object: null  # Name of the demo history variable in the custom path
+
+##### Sample information
+samples: 1000 # Number of samples
+
+# If a pedigree is applied
+pedigree:
+  pedigree_mode: false # Boolean if WF pedigree is to be created
+  mating: di # Option are di or mono (monogamous)
+  gen_end: 25 # How many generations back do we simulate?
+
+##### Custom simulation
+custom_sim:
+  path: null
+  object: null
+
+##### IBDNe parameters
+ibd_filter: null
+ibdne: /users/cwilli50/ibdne.23Apr20.ae9.jar
+nthreads: 8
+filtersamples: false
+npairs: 0
+nits: 1000
+nboots: 0
+mincm: 2
+trimcm: 0.2
+gmin: 1
+gmax: 300  # Assuming mincm=2, so gmax=600/2=300
+ibdne_time: --time=1:00:00

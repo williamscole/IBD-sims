@@ -1,0 +1,40 @@
+custom_demo:
+  object: null
+  path: null
+custom_sim:
+  object: load_random_10000
+  path: load_quebec.py
+dir_name: unfiltered_ibdne
+end_chr: 22
+filtersamples: false
+gb: 32
+gmax: 300
+gmin: 1
+hapmap_chr1: /users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr1.txt.gz
+ibd_filter: null
+ibdne: /users/cwilli50/ibdne.23Apr20.ae9.jar
+ibdne_time: --time=1:00:00
+iter: 1
+label: 'load_random_10000
+
+  n=10000
+
+  load_random_10000
+
+  unfiltered'
+mincm: 2
+nboots: 80
+nits: 1000
+npairs: 0
+nthreads: 8
+pedigree:
+  gen_end: 25
+  mating: di
+  pedigree_mode: false
+post_process_only: false
+purple_nodes: true
+run_ibdne: true
+samples: 10000
+sim_time: --time=30:00
+simulate_only: false
+trimcm: 0.2
