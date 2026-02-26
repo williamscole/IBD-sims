@@ -3,16 +3,28 @@
 args=${1}
 
 if [[ -f "$args/args.yaml" ]]
-    then
+then
     path=${args}
 else
-    path="$(date +%Y-%m-%d_%H-%M-%S.%N)"
+    # Generate directory name from label in YAML
+    label=$(awk '/^label:/{found=1; sub(/^label: */, ""); gsub(/"/, ""); gsub(/'\''/, ""); if ($0 != "") printf "%s", $0; next} found && /^[^ ]/{found=0} found{gsub(/^ */, ""); printf "_%s", $0}' "$args")
+
+    # Clean up: replace spaces and parentheses
+    label=$(echo "$label" | sed 's/ /-/g; s/(//g; s/)//g')
+
+    # Handle clashes by appending an incrementing suffix
+    path=$label
+    counter=1
+    while [[ -d "$path" ]]; do
+        path=$(printf "%s_%03d" "$label" "$counter")
+        counter=$(( counter + 1 ))
+    done
+
     mkdir $path
     mkdir $path/slurm
     mkdir $path/errors
     cat $args > ${path}/args.yaml
-    python yaml_tools.py $path
-    fi
+fi
 
 echo "All results will be found in ${path}"
 
@@ -34,7 +46,6 @@ pedigree_mode=$(retrieve_arg "pedigree_mode")
 if [[ $post_process_only == "true" ]]
 then
     echo "Running post-processing only!"
-    # Submit IBDNe jobs as an array
     sbatch --array=1-${n_iter} $ibdne_time --mem $((2*gb))g --ntasks 1 \
         --cpus-per-task $(retrieve_arg "nthreads") \
         --output=${path}/slurm/IBDNe_iter%a_%j.out \
@@ -64,7 +75,6 @@ echo $ped_job
 
 tot_array=$(( $end_chr * $n_iter ))
 
-# array=$(python check_completed.py ${path} ${tot_array} | tail -1)
 for array in $(python check_completed.py ${path} ${tot_array})
     do
     echo "Running array $array"
