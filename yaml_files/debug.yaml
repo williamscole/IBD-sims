@@ -1,0 +1,35 @@
+custom_demo:
+  object: constant_Ne
+  path: demography.py
+custom_sim:
+  object: null
+  path: null
+base_dir: null
+end_chr: 2
+filtersamples: false
+gb: 6
+gmax: 300
+gmin: 1
+ibd_filter: null
+ibdne_time: --time=10:00
+iter: 1
+label: 'constant_Ne
+  n=1000
+  coalescent
+  debug'
+mincm: 2
+nboots: 0
+nits: 100
+npairs: 0
+nthreads: 1
+pedigree:
+  gen_end: 25
+  mating: di
+  pedigree_mode: false
+post_process_only: false
+purple_nodes: false
+run_ibdne: true
+samples: 1000
+sim_time: --time=10:00
+simulate_only: false
+trimcm: 0.2
