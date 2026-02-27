@@ -260,12 +260,7 @@ def base_seed(path, iter_n):
 
     return (int(full_hex[-16:], 16) + iter_n)  % (2**32)
 
-
-if __name__ == "__main__":
-
-    path = sys.argv[1]
-    iter_n = sys.argv[2]
-    chrom = sys.argv[3]
+def sim(path, iter_n, chrom):
 
     iteration_seed = base_seed(path, int(iter_n))
     print(f"Iteration seed: {iteration_seed}")
@@ -338,7 +333,13 @@ if __name__ == "__main__":
         err.write(f"No .ibd.gz file found for iter {iter_n}, chromosome {chrom}")
         err.close()
 
+if __name__ == "__main__":
 
+    path = sys.argv[1]
+    iter_n = sys.argv[2]
+    chrom = sys.argv[3]
+
+    sim(path, iter_n, chrom)
 
     
 
