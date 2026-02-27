@@ -358,7 +358,7 @@ def run(yaml_path, local, n_workers):
     if any(f.exception() is None for f in post_jobs.values()):
         print("Running plot...")
         import plot
-        plot.main(path)
+        plot.plot(path)
 
     print("Done.")
 
