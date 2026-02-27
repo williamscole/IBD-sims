@@ -27,6 +27,7 @@ Each simulation is configured via a YAML file. A template with default values is
 - `iter` — number of independent simulation replicates to run
 - `samples` — number of diploid individuals to simulate
 - `end_chr` — number of chromosomes to simulate. If `30`, simulates 30 chromosomes of 100 Mb each with a flat recombination rate of 1e-8. If `22`, simulates the 22 autosomes using the real HapMap GRCh37 genetic map (path set in `setup.yaml`)
+- `base_dir` — optional base directory under which the output directory will be created. If not set, the output directory is created in the current working directory
 
 **Demographic model**
 - `custom_demo` — specifies the demographic history to simulate under. Set `path` to a Python file and `object` to the name of an `msprime.Demography` object defined in that file. Several models are provided in `demography.py`
@@ -45,6 +46,7 @@ Eight ready-to-run configurations are provided in `yaml_files/`:
 
 | File | Demographic model | N samples | Mating | Pedigree generations |
 |------|------------------|-----------|--------|----------------------|
+| `debug.yaml` | Constant Ne (10k) | 1,000 | — | — |
 | `arg1.yaml` | Constant Ne (10k) | 1,000 | Random | 25 |
 | `arg2.yaml` | Constant Ne (10k) | 1,000 | Monogamous | 25 |
 | `arg3.yaml` | Constant Ne (100k) | 1,000 | Random | 25 |
@@ -54,4 +56,4 @@ Eight ready-to-run configurations are provided in `yaml_files/`:
 | `arg7.yaml` | Quebec (real data) | 10,000 | — | — |
 | `arg8.yaml` | Ashkenazi | 1,000 | Random | 12 |
 
-All configurations use 50 replicates and 30 simulated chromosomes of 100 Mb each. The Quebec configuration uses empirical tree sequences rather than a simulated demographic model.
+All configurations except `arg_debug.yaml` use 50 replicates and 30 simulated chromosomes of 100 Mb each. The debug configuration runs a single replicate over 2 chromosomes using a pure coalescent simulation and is intended for testing the pipeline end-to-end. The Quebec configuration uses empirical tree sequences rather than a simulated demographic model.
