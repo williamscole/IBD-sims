@@ -280,6 +280,7 @@ def sim(path, iter_n, chrom):
     print(f"Random seed: {seed}")
 
 
+    # Dead code for direct CLI use only
     if int(chrom) == 0 and yargs["pedigree"]["pedigree_mode"]:
         log = open(f"{path}/simulation.log", "w")
 
