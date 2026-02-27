@@ -206,6 +206,7 @@ def run_post_processing(path, iter_n):
 
     # Run IBDNe
     if args.get("run_ibdne"):
+        import tempfile
         dir_name = args.get("dir_name", "ibdne")
         out_dir = f"{path}/{dir_name}"
         os.makedirs(out_dir, exist_ok=True)
@@ -213,33 +214,35 @@ def run_post_processing(path, iter_n):
 
         gb = int(args["gb"] * 1.8)
 
-        filtered_ibd = filter_ibd(f"{prefix}.ibd.gz", args["samples"], args.get("ibd_filter"))
+        with tempfile.NamedTemporaryFile(suffix=".ibd", delete=False) as tmp:
+            tmp_path = tmp.name
 
-        ibdne_cmd = (
-            f"java -jar -Xmx{gb}g {config['ibdne_jar']}"
-            f" map={prefix}.map"
-            f" out={out_dir}/iter{iter_n}"
-            f" nthreads={args['nthreads']}"
-            f" filtersamples={str(args['filtersamples']).lower()}"
-            f" npairs={args['npairs']}"
-            f" nits={args['nits']}"
-            f" nboots={args['nboots']}"
-            f" mincm={args['mincm']}"
-            f" trimcm={args['trimcm']}"
-            f" gmin={args['gmin']}"
-            f" gmax={args['gmax']}"
-        )
+        try:
+            filter_ibd(f"{prefix}.ibd.gz", args["samples"], tmp_path, args.get("ibd_filter"))
 
-        proc = subprocess.run(
-            ibdne_cmd,
-            input=filtered_ibd,
-            shell=True,
-            capture_output=True,
-            text=True
-        )
+            ibdne_cmd = (
+                f"cat {tmp_path} |"
+                f" java -jar -Xmx{gb}g {config['ibdne_jar']}"
+                f" map={prefix}.map"
+                f" out={out_dir}/iter{iter_n}"
+                f" nthreads={args['nthreads']}"
+                f" filtersamples={str(args['filtersamples']).lower()}"
+                f" npairs={args['npairs']}"
+                f" nits={args['nits']}"
+                f" nboots={args['nboots']}"
+                f" mincm={args['mincm']}"
+                f" trimcm={args['trimcm']}"
+                f" gmin={args['gmin']}"
+                f" gmax={args['gmax']}"
+            )
 
-        if proc.returncode != 0:
-            raise RuntimeError(f"IBDNe failed for iter {iter_n}:\n{proc.stderr}")
+            proc = subprocess.run(ibdne_cmd, shell=True, capture_output=True, text=True)
+
+            if proc.returncode != 0:
+                raise RuntimeError(f"IBDNe failed for iter {iter_n}:\n{proc.stderr}")
+
+        finally:
+            os.remove(tmp_path)
 
         print(f"Post-processing complete: iter {iter_n}")
 
