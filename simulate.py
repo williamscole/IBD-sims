@@ -23,7 +23,7 @@ import yaml
 import submitit
 from pathlib import Path
 
-from simulations import sim, run_pedigree as create_pedigree, base_seed, load_config
+from simulations import sim, create_pedigree, base_seed, load_config
 from concat_tmrca import concat_tmrca
 from purple import readin_ibd
 from filter_ibd import filter_ibd
