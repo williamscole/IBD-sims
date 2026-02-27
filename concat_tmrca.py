@@ -92,12 +92,7 @@ def load_tmrca(file_path, sep='\t'):
 # df = load_chromosome_data('chromosome_data.txt')
 # print(df)
 
-if __name__ == "__main__":
-
-    path = sys.argv[1]
-    iter_n = sys.argv[2]
-
-    end_chr = yaml.safe_load(open(f"{path}/args.yaml"))["end_chr"]
+def concat_tmrca(path, iter_n, end_chr):
 
     files = [f"{path}/iter{iter_n}_chr{chrom}.tmrca.pkl" for chrom in range(1, end_chr + 1)]
 
@@ -135,3 +130,13 @@ if __name__ == "__main__":
                 df.to_csv(file_to_write, sep="\t", index=False, header=False, compression='gzip', mode='a')
 
     print("Wrote: " + file_to_write)
+
+
+if __name__ == "__main__":
+
+    path = sys.argv[1]
+    iter_n = sys.argv[2]
+
+    end_chr = yaml.safe_load(open(f"{path}/args.yaml"))["end_chr"]
+
+    concat_tmrca(path, iter_n, end_chr)
