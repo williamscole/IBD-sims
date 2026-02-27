@@ -9,7 +9,7 @@ BUCKETS = [(-1, 0), (0, 0.01), (0.01, 0.05), (0.05, 0.1), (0.1, 0.2), (0.2, 0.3)
 def maf_bucket(chrom, afreq_chr1):
     afreq_path = afreq_chr1.replace("chr1", f"chr{chrom}")
     counts = np.zeros(len(BUCKETS))
-    df = pd.read_csv(afreq_path, delim_whitespace=True)
+    df = pd.read_csv(afreq_path, sep="\\s+")
     for index, (i, j) in enumerate(BUCKETS):
         counts[index] = df.MAF.apply(lambda x: i < x <= j).sum()
     return counts
@@ -17,7 +17,7 @@ def maf_bucket(chrom, afreq_chr1):
 
 def get_snp_density(chrom, bim_chr1, w=1_000_000, n=100):
     bim_path = bim_chr1.replace("chr1", f"chr{chrom}")
-    bim = pd.read_csv(bim_path, delim_whitespace=True, header=None)
+    bim = pd.read_csv(bim_path, sep="\\s+", header=None)
     max_end = bim.iloc[-1][3] - w
     min_end = bim.iloc[0][3] + 1
     random_windows = np.random.randint(min_end, max_end, n)
