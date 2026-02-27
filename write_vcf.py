@@ -22,8 +22,8 @@ def physical_to_cm(positions, rates):
 
     return np.concatenate((np.array([0]), cm_pos)), np.concatenate((np.array([0]), mb_pos))
 
-def write_vcf(ts, output, chrom, rate, seed):
-    with open("ukb_snps.pkl", "rb") as pklf:
+def write_vcf(ts, output, chrom, rate, seed, snps_pkl="ukb_snps.pkl"):
+    with open(snps_pkl, "rb") as pklf:
         snps = pkl.load(pklf)
 
     # Get allele freqs
