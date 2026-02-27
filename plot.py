@@ -206,22 +206,15 @@ def find_ibdne_directories(directory_path):
     
     return ibdne_directories
 
-
-# Example usage:
-if __name__ == "__main__":
+def plot(path, exclude=[]):
 
     data_dict = {}
 
-    path = sys.argv[1]
-
     ibdne_dir = find_ibdne_directories(path)
 
-    if len(ibdne_dir) == 0:
-        ibdne_dir = [path]
-    elif len(sys.argv) > 2:
-        for i in sys.argv[2:]:
-            if i in ibdne_dir:
-                ibdne_dir.remove(i)
+    for i in exclude:
+        if i in ibdne_dir:
+            ibdne_dir.remove(i)
 
     for i in ibdne_dir:
 
@@ -246,6 +239,11 @@ if __name__ == "__main__":
 
     print(f"Saved file: {outputf}")
 
+
+# Example usage:
+if __name__ == "__main__":
+
+    plot(sys.argv[1], sys.argv[2:] if len(sys.argv)>2 else [])
 
 
 
