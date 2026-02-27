@@ -18,17 +18,12 @@ import re
 import sys
 import shutil
 import subprocess
-import gzip
 import tempfile
 import yaml
 import submitit
 from pathlib import Path
 
-from simulations import (
-    WFSetup, Simulation, DemographicSetup,
-    run_hapibd, add_tmrca, base_seed
-)
-from write_vcf import write_vcf
+from simulations import sim, run_pedigree as create_pedigree, base_seed, load_config
 from concat_tmrca import concat_tmrca
 from purple import readin_ibd
 from filter_ibd import filter_ibd
@@ -36,11 +31,6 @@ import plot as plot_module
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def load_config():
-    config_path = Path(__file__).parent / "setup.yaml"
-    return yaml.safe_load(open(config_path))
-
 
 def load_args(path):
     return yaml.safe_load(open(f"{path}/args.yaml"))
@@ -124,48 +114,12 @@ def wait_for_jobs(jobs):
 
 def run_pedigree(path, iter_n):
     """Phase 1: create WF pedigree for one iteration."""
-    args = load_args(path)
-    args["iter_n"] = str(iter_n)
-    args["iteration_seed"] = base_seed(path, iter_n)
-
-    demography = DemographicSetup.create(args)
-    WFSetup.create(args, f"{path}/iter{iter_n}", demography)
-    print(f"Pedigree created: iter {iter_n}")
+    create_pedigree(path, iter_n)
 
 
 def run_simulation(path, iter_n, chrom):
     """Phase 2: simulate one (iteration, chromosome) pair."""
-    args = load_args(path)
-    iteration_seed = base_seed(path, int(iter_n))
-    args["iter_n"] = str(iter_n)
-    args["iteration_seed"] = iteration_seed
-    args["seed"] = iteration_seed + chrom
-    args["chrom"] = chrom
-
-    prefix = f"{path}/iter{iter_n}_chr{chrom}"
-
-    ts, rate, _, seed = Simulation.create(args, chrom, f"{path}/iter{iter_n}")
-
-    write_vcf(ts, prefix, chrom, rate, seed)
-    run_hapibd(prefix, args["gb"])
-    add_tmrca(prefix, ts, dump=False)
-
-    # Cleanup if successful
-    if os.path.exists(f"{prefix}.ibd.gz"):
-        with gzip.open(f"{prefix}.ibd.gz", "rt") as f:
-            lines = [f.readline() for _ in range(10)]
-        if len([l for l in lines if l.strip()]) == 10:
-            for ext in [".vcf.gz", ".hbd.gz"]:
-                if os.path.exists(f"{prefix}{ext}"):
-                    os.remove(f"{prefix}{ext}")
-            print(f"Success: iter {iter_n}, chr {chrom}")
-            return
-
-    # Write error if unsuccessful
-    os.makedirs(f"{path}/errors", exist_ok=True)
-    with open(f"{path}/errors/iter{iter_n}_chr{chrom}.err", "w") as f:
-        f.write(f"No .ibd.gz file found for iter {iter_n}, chromosome {chrom}\n")
-    raise RuntimeError(f"Simulation failed: iter {iter_n}, chr {chrom}")
+    sim(path, iter_n, chrom)
 
 
 def run_post_processing(path, iter_n):
