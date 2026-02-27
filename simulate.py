@@ -105,7 +105,13 @@ def wait_for_jobs(jobs):
         try:
             job.result()
         except Exception as e:
-            print(f"Job {job.job_id} failed: {e}")
+            # LocalExecutor sometimes fails to write the result pickle even
+            # when the job completed successfully. If the state is FINISHED
+            # treat it as a success and rely on is_sim_complete() to verify.
+            if job.state == "FINISHED":
+                print(f"Job {job.job_id} finished (result pickle missing, treating as success)")
+                continue
+            print(f"Job {job.job_id} failed (state: {job.state}): {e}")
             failed.append(job)
     return failed
 
