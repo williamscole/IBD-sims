@@ -10,6 +10,7 @@ import random
 import hashlib
 import itertools as it
 import pickle as pkl
+from pathlib import Path
 
 from write_vcf import write_vcf
 from wf_pedigree import create_pedigree
@@ -19,6 +20,10 @@ from maf_buckets import SNPs, BUCKETS
 import warnings
 
 pd.options.mode.chained_assignment = None
+
+def load_config():
+    config_path = Path(__file__).parent / "setup.yaml"
+    return yaml.safe_load(open(config_path))
 
 class WFSetup:
     @staticmethod
@@ -120,12 +125,12 @@ class Simulation:
 
         return msprime.sim_mutations(ts, rate=1e-8, random_seed=seed - 10), rate, [demography], seed
 
-def run_hapibd(prefix, gb):
+def run_hapibd(prefix, gb, hapibd_jar='/users/cwilli50/hap-ibd.jar'):
     command = [
         'java',
         '-jar',
         f'-Xmx{int(gb*0.8)}g',
-        '/users/cwilli50/hap-ibd.jar',
+        hapibd_jar,
         f'gt={prefix}.vcf.gz',
         f'map={prefix}.map',
         f'out={prefix}'
@@ -272,6 +277,8 @@ def sim(path, iter_n, chrom):
 
     yargs = yaml.safe_load(open(f"{path}/args.yaml"))
 
+    config = load_config()
+
     yargs["seed"] = seed
     yargs["iteration_seed"] = iteration_seed
     yargs["iter_n"] = iter_n
@@ -307,9 +314,9 @@ def sim(path, iter_n, chrom):
 
     prefix = f"{path}/iter{iter_n}_chr{chrom}"
 
-    write_vcf(ts, prefix, chrom, rate, seed)
+    write_vcf(ts, prefix, chrom, rate, seed, snps_pkl=config["maf_pickle"])
 
-    run_hapibd(prefix, yargs["gb"])
+    run_hapibd(prefix, args["gb"], hapibd_jar=config["hap_ibd_jar"])
 
     add_tmrca(prefix, ts, False)
 
