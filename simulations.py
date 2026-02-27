@@ -341,6 +341,8 @@ def sim(path, iter_n, chrom):
         err.write(f"No .ibd.gz file found for iter {iter_n}, chromosome {chrom}")
         err.close()
 
+    return True
+
 if __name__ == "__main__":
 
     path = sys.argv[1]
