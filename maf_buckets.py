@@ -67,9 +67,11 @@ if __name__ == "__main__":
                     "afreq files should be plink2 --freq output; "
                     "bim files should be standard plink .bim format."
     )
-    parser.add_argument("--afreq-chr1", type=str, required=True,
+    parser.add_argument("--afreq-chr1", type=str,
+                        default="/gpfs/data/sramacha/datasets/phased_ukb/allele_freqs/chr1.frq",
                         help="Path to chr1 allele frequency file (plink2 --freq output).")
-    parser.add_argument("--bim-chr1", type=str, required=True,
+    parser.add_argument("--bim-chr1", type=str,
+                        default="/gpfs/data/sramacha/datasets/shared_ukb/ukbgenotypedata/ukb_chr1.bim",
                         help="Path to chr1 bim file (plink .bim format).")
     parser.add_argument("--output", type=str, required=True,
                         help="Path to write the output pickle.")
