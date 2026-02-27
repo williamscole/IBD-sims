@@ -4,7 +4,7 @@ custom_demo:
 custom_sim:
   object: null
   path: null
-base_dir: null
+base_dir: debug
 end_chr: 2
 filtersamples: false
 gb: 6
