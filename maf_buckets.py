@@ -48,6 +48,15 @@ class SNPs:
         with open(output, "wb") as pklf:
             pkl.dump(self, pklf)
 
+    def save_me_simple(self, output):
+        d = {
+            "freqs": self.freqs.tolist(),
+            "density": float(self.density),
+            "buckets": self.buckets
+        }
+        with open(output, "wb") as pklf:
+            pkl.dump(d, pklf)
+
 
 if __name__ == "__main__":
 
@@ -75,5 +84,5 @@ if __name__ == "__main__":
         snp_densities.extend(get_snp_density(chrom, args.bim_chr1))
 
     snp_counts = SNPs(counts, snp_densities)
-    snp_counts.save_me(args.output)
+    snp_counts.save_me_simple(args.output)
     print(f"Wrote: {args.output}")
