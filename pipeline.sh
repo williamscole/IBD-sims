@@ -12,6 +12,13 @@ else
     # Clean up: replace spaces and parentheses
     label=$(echo "$label" | sed 's/ /-/g; s/(//g; s/)//g')
 
+    # Prepend base_dir if set
+    base_dir=$(awk '/^base_dir:/{print $2}' "$args")
+    if [[ -n "$base_dir" && "$base_dir" != "null" ]]; then
+        mkdir -p "$base_dir"
+        label="${base_dir}/${label}"
+    fi
+
     # Handle clashes by appending an incrementing suffix
     path=$label
     counter=1
