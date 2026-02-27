@@ -104,18 +104,15 @@ def prune_relatives(g, target=1000, out_nodes=[]):
 
     return np.random.choice(out_nodes, target, replace=False) if len(out_nodes) > target else out_nodes
 
+def filter_ibd(ibd_path, n_samples, output, filtering="none"):
 
-if __name__ == "__main__":
-
-    ibd_df = pd.read_csv(sys.argv[1], delim_whitespace=True, header=None)
-    n_samples = int(sys.argv[2])
-    filtering = sys.argv[3] if len(sys.argv) > 3 else "none"
+    ibd_df = pd.read_csv(ibd_path, delim_whitespace=True, header=None)
 
     if filtering == "none" or filtering == "null" or filtering == "":
-        ibd_df.to_csv(sys.stdout, sep=" ", header=False, index=False)
-        sys.exit()
+        ibd_df.to_csv(output, sep=" ", header=False, index=False)
+        return
 
-    kinship_obj = Kinship(os.path.dirname(sys.argv[1]))
+    kinship_obj = Kinship(os.path.dirname(ibd_path))
 
     rows = []
     for pair, pair_df in ibd_df.groupby([0, 2]):
@@ -143,7 +140,14 @@ if __name__ == "__main__":
 
     ibd_df = ibd_df[ibd_df.apply(lambda x: x[0] in nodes and x[2] in nodes, axis=1)]
 
-    ibd_df.to_csv(sys.stdout, sep=" ", header=False, index=False)
+    ibd_df.to_csv(output, sep=" ", header=False, index=False)
 
 
+if __name__ == "__main__":
+
+    ibd_path = sys.argv[1]
+    n_samples = int(sys.argv[2])
+    filtering = sys.argv[3] if len(sys.argv) > 3 else "none"
+
+    filter_ibd(ibd_path, n_samples, sys.stdout, filtering)
 
