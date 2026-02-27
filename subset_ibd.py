@@ -4,7 +4,7 @@ import sys
 
 if __name__ == "__main__":
 
-    segments = pd.read_csv(sys.argv[-2], delim_whitespace=True, header=None).head(10000)
+    segments = pd.read_csv(sys.argv[-2], sep="\\s+", header=None).head(10000)
 
     samples = int(sys.argv[-1])
 

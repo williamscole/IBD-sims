@@ -76,7 +76,7 @@ def process_dict(pair_dict, ids_to_keep=[]):
 def process_chromosome(filen, ids_to_keep=[], chunksize=1000000):
     pair_dict = {}
 
-    for chunk in pd.read_csv(filen, delim_whitespace=True, header=None, chunksize=chunksize):
+    for chunk in pd.read_csv(filen, sep="\\s+", header=None, chunksize=chunksize):
 
         if len(ids_to_keep) > 0:
             chunk = chunk[(chunk[0].isin(ids_to_keep)) | (chunk[2].isin(ids_to_keep))]
@@ -135,7 +135,7 @@ def readin_ibd(filen, n_chrom=0, ids_to_keep=[], file_to_write=None, nthreads=8,
 #             tmp[7] = tmp[7].apply(int)
 #             df_list.append(tmp)
 #         return pd.concat(df_list)
-#     df = pd.read_csv(filen, delim_whitespace=True, header=None)
+#     df = pd.read_csv(filen, sep="\\s+", header=None)
 #     df[7] = df[7].apply(int)
 #     return df
 

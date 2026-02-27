@@ -15,7 +15,7 @@ from purple import readin_ibd
 
 def load_ibd(path, iter_n):
 
-    ibd_df = pd.read_csv(f"{path}/iter{iter_n}.ibd.gz", delim_whitespace=True, header=None).drop_duplicates()
+    ibd_df = pd.read_csv(f"{path}/iter{iter_n}.ibd.gz", sep="\\s+", header=None).drop_duplicates()
 
     tmrca_df = load_tmrca(f"{path}/iter{iter_n}.tmrca.gz")
 
@@ -164,7 +164,7 @@ def tmrca_by_kinship(path):
     elif yaml_arg(path, "end_chr") == 22:
         cm = 0
         for chrom in range(1, 23):
-            tmp = pd.read_csv(f"/users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr{chrom}.txt.gz", delim_whitespace=True)
+            tmp = pd.read_csv(f"/users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr{chrom}.txt.gz", sep="\\s+")
             cm += (tmp.iloc[-1]["Map(cM)"] - tmp.iloc[0]["Map(cM)"])
 
     degree_d = {d: {l: [] for l in range(2, 300)} for d in DEGREES.keys()}
@@ -202,7 +202,7 @@ def tmrca_by_kinship(path):
 
 def get_path(path):
     if not os.path.exists(path):
-        tmp = pd.read_csv("focus_simulations.tsv", delim_whitespace=True)
+        tmp = pd.read_csv("focus_simulations.tsv", sep="\\s+")
         arr = int(path)
         path = tmp.iloc[arr]["path"]
         print(f"Array job. Running array {arr} for {path}")

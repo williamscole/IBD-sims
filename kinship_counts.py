@@ -5,7 +5,7 @@ import polars as pl
 
 if __name__ == "__main__":
 
-    df = pd.read_csv(sys.argv[-1], delim_whitespace=True, header=None)
+    df = pd.read_csv(sys.argv[-1], sep="\\s+", header=None)
 
     counts = {}
     for _, pair_df in df.groupby([0, 2]):

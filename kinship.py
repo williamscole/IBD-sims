@@ -18,7 +18,7 @@ DEGREES = {
 
 if __name__ == "__main__":
 
-    df = pd.read_csv(sys.argv[-1], delim_whitespace=True, header=None)
+    df = pd.read_csv(sys.argv[-1], sep="\\s+", header=None)
 
     samples = list(set(df[0].values) | set(df[2].values))
     degrees = {d: index for index, d in enumerate(DEGREES.keys())}

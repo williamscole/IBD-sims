@@ -252,7 +252,7 @@ if __name__ == "__main__":
     
     # def load_data(path_pattern, n_iterations=50):
     #     return [pd.read_csv(f"{path_pattern.format(i=i, Ne=Ne)}", 
-    #                        delim_whitespace=True)
+    #                        sep="\\s+")
     #             for i in range(1, n_iterations + 1)]
     
     # # Load datasets

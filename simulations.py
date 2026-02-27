@@ -221,7 +221,7 @@ def add_tmrca(prefix, ts, dump, interval_size=1000000):
 
     with warnings.catch_warnings():
         warnings.simplefilter(action='ignore', category=FutureWarning)
-        df = pd.read_csv(prefix + ".ibd.gz", delim_whitespace=True, header=None)
+        df = pd.read_csv(prefix + ".ibd.gz", sep="\\s+", header=None)
 
     df["id1"] = df[[0, 1]].apply(lambda x: get_node(*x), axis=1)
     df["id2"] = df[[2, 3]].apply(lambda x: get_node(*x), axis=1)
@@ -316,7 +316,7 @@ def sim(path, iter_n, chrom):
 
     write_vcf(ts, prefix, chrom, rate, seed, snps_pkl=config["maf_pickle"])
 
-    run_hapibd(prefix, args["gb"], hapibd_jar=config["hap_ibd_jar"])
+    run_hapibd(prefix, yargs["gb"], hapibd_jar=config["hap_ibd_jar"])
 
     add_tmrca(prefix, ts, False)
 
@@ -325,7 +325,7 @@ def sim(path, iter_n, chrom):
         with warnings.catch_warnings():
             warnings.simplefilter(action='ignore', category=FutureWarning)
 
-            df = pd.read_csv(f"{prefix}.ibd.gz", nrows=10, delim_whitespace=True, header=None)
+            df = pd.read_csv(f"{prefix}.ibd.gz", nrows=10, sep="\\s+", header=None)
 
         if df.shape[0] == 10:
 

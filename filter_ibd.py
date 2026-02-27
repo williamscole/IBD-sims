@@ -106,7 +106,7 @@ def prune_relatives(g, target=1000, out_nodes=[]):
 
 def filter_ibd(ibd_path, n_samples, output, filtering="none"):
 
-    ibd_df = pd.read_csv(ibd_path, delim_whitespace=True, header=None)
+    ibd_df = pd.read_csv(ibd_path, sep="\\s+", header=None)
 
     if filtering == "none" or filtering == "null" or filtering == "":
         ibd_df.to_csv(output, sep=" ", header=False, index=False)

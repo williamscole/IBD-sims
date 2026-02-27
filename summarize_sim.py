@@ -34,7 +34,7 @@ def main():
     for i in range(1, n_iter+1):
         f = f"{path}/iter{i}.ibd.gz"
         if os.path.exists(f):
-            lens.append(pd.read_csv(f, delim_whitespace=True, header=None)[7].apply(int).values)
+            lens.append(pd.read_csv(f, sep="\\s+", header=None)[7].apply(int).values)
             tmrcas.append(pd.read_csv(f.replace(".ibd.", ".tmrca."), header=None)[0].apply(int).values)
         else:
             print(f"File does not exit: {f}")
