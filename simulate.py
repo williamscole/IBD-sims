@@ -1,15 +1,15 @@
 """
-run_pipeline.py — orchestrator for IBD-sims pipeline.
+simulate.py — orchestrator for IBD-sims pipeline.
 
 Usage:
     # Slurm
-    python run_pipeline.py yaml_files/arg1.yaml
+    python simulate.py yaml_files/arg1.yaml
 
     # Local (8 parallel workers)
-    python run_pipeline.py yaml_files/arg1.yaml --local --workers 8
+    python simulate.py yaml_files/arg1.yaml --local --workers 8
 
     # Resume a previous run
-    python run_pipeline.py path/to/existing/run/
+    python simulate.py path/to/existing/run/
 """
 
 import argparse
@@ -19,6 +19,7 @@ import sys
 import shutil
 import subprocess
 import tempfile
+import time
 import yaml
 import submitit
 from pathlib import Path
@@ -83,14 +84,7 @@ def is_sim_complete(path, iter_n, chrom):
     """Check whether a simulation job already completed successfully."""
     ibd_file = f"{path}/iter{iter_n}_chr{chrom}.ibd.gz"
     tmrca_file = f"{path}/iter{iter_n}_chr{chrom}.tmrca.pkl"
-    if not os.path.exists(ibd_file) or not os.path.exists(tmrca_file):
-        return False
-    try:
-        with gzip.open(ibd_file, "rt") as f:
-            lines = [f.readline() for _ in range(10)]
-        return len([l for l in lines if l.strip()]) == 10
-    except Exception:
-        return False
+    return os.path.exists(ibd_file) and os.path.exists(tmrca_file)
 
 
 def is_post_complete(path, iter_n):
@@ -99,20 +93,23 @@ def is_post_complete(path, iter_n):
 
 
 def wait_for_jobs(jobs):
-    """Wait for a list of submitit jobs, return list of failed jobs."""
+    """Poll submitit jobs until all finish. Return list of failed jobs."""
+    pending = list(jobs)
     failed = []
-    for job in jobs:
-        try:
-            job.result()
-        except Exception as e:
-            # LocalExecutor sometimes fails to write the result pickle even
-            # when the job completed successfully. If the state is FINISHED
-            # treat it as a success and rely on is_sim_complete() to verify.
-            if job.state == "FINISHED":
-                print(f"Job {job.job_id} finished (result pickle missing, treating as success)")
-                continue
-            print(f"Job {job.job_id} failed (state: {job.state}): {e}")
-            failed.append(job)
+    while pending:
+        still_pending = []
+        for job in pending:
+            state = job.state
+            if state == "COMPLETED":
+                pass  # success
+            elif state == "FAILED":
+                print(f"Job {job.job_id} failed")
+                failed.append(job)
+            else:
+                still_pending.append(job)
+        pending = still_pending
+        if pending:
+            time.sleep(10)
     return failed
 
 
@@ -238,8 +235,8 @@ def run(yaml_path, local, n_workers):
     if local:
         executor = submitit.LocalExecutor(folder=f"{path}/slurm")
     else:
-        executor = submitit.AutoExecutor(folder=f"{path}/slurm")
-        executor.update_parameters(slurm_partition="batch")
+        executor = submitit.SlurmExecutor(folder=f"{path}/slurm")
+        executor.update_parameters(use_srun=False)
 
     # ── Phase 1: Pedigree creation ────────────────────────────────────────────
     ped_jobs = {}
@@ -248,7 +245,7 @@ def run(yaml_path, local, n_workers):
         if local:
             executor.update_parameters(timeout_min=20)
         else:
-            executor.update_parameters(slurm_mem_gb=4, slurm_time=20, cpus_per_task=1)
+            executor.update_parameters(mem=4096, time=20, cpus_per_task=1)
 
         for iter_n in range(1, n_iter + 1):
             ped_jobs[iter_n] = executor.submit(run_pedigree, path, iter_n)
@@ -266,10 +263,10 @@ def run(yaml_path, local, n_workers):
         executor.update_parameters(timeout_min=sim_timeout)
     else:
         executor.update_parameters(
-            slurm_mem_gb=args["gb"],
-            slurm_time=sim_timeout,
+            mem=args["gb"] * 1024,
+            time=sim_timeout,
             cpus_per_task=1,
-            slurm_array_parallelism=100
+            array_parallelism=100
         )
 
     sim_jobs = {}
@@ -277,9 +274,8 @@ def run(yaml_path, local, n_workers):
         sim_jobs[iter_n] = {}
 
         if not local and pedigree_mode:
-            # Set Slurm dependency on this iteration's pedigree job
             executor.update_parameters(
-                slurm_additional_parameters={"dependency": f"afterok:{ped_jobs[iter_n].job_id}"}
+                dependency=f"afterok:{ped_jobs[iter_n].job_id}"
             )
 
         for chrom in range(1, end_chr + 1):
@@ -289,8 +285,7 @@ def run(yaml_path, local, n_workers):
             sim_jobs[iter_n][chrom] = executor.submit(run_simulation, path, iter_n, chrom)
 
         if not local and pedigree_mode:
-            # Clear dependency for subsequent iterations' setup
-            executor.update_parameters(slurm_additional_parameters={})
+            executor.update_parameters(dependency=None)
 
     # ── Phase 3: Post-processing ──────────────────────────────────────────────
     print("Waiting for simulations and submitting post-processing...")
@@ -298,10 +293,10 @@ def run(yaml_path, local, n_workers):
         executor.update_parameters(timeout_min=ibdne_timeout)
     else:
         executor.update_parameters(
-            slurm_mem_gb=int(args["gb"] * 1.8),
-            slurm_time=ibdne_timeout,
+            mem=int(args["gb"] * 1.8 * 1024),
+            time=ibdne_timeout,
             cpus_per_task=args["nthreads"],
-            slurm_additional_parameters={}
+            additional_parameters={}
         )
 
     post_jobs = {}
@@ -310,7 +305,6 @@ def run(yaml_path, local, n_workers):
             print(f"Skipping post-processing iter {iter_n} (already complete)")
             continue
 
-        # Wait for all simulation jobs for this iteration
         iter_jobs = list(sim_jobs[iter_n].values())
         if iter_jobs:
             failed = wait_for_jobs(iter_jobs)

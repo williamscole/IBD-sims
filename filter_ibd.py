@@ -108,7 +108,7 @@ def filter_ibd(ibd_path, n_samples, output, filtering="none"):
 
     ibd_df = pd.read_csv(ibd_path, sep="\\s+", header=None)
 
-    if filtering == "none" or filtering == "null" or filtering == "":
+    if filtering == "none" or filtering == "null" or filtering == "" or filtering is None:
         ibd_df.to_csv(output, sep=" ", header=False, index=False)
         return
 
