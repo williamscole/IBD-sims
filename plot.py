@@ -197,17 +197,15 @@ def load_dfs(path):
 
 def find_ibdne_directories(directory_path):
     ibdne_directories = []
-    
     for item in os.listdir(directory_path):
         item_path = os.path.join(directory_path, item)
-        
-        if os.path.isdir(item_path) and item.endswith("_ibdne"):
+        if os.path.isdir(item_path) and (item.endswith("_ibdne") or item == "ibdne"):
             ibdne_directories.append(directory_path + "/" + item)
-    
     return ibdne_directories
 
 def plot(path, exclude=[]):
 
+    yargs = yaml.safe_load(open(f"{path}/args.yaml"))  # load before loop
     data_dict = {}
 
     ibdne_dir = find_ibdne_directories(path)
@@ -217,26 +215,24 @@ def plot(path, exclude=[]):
             ibdne_dir.remove(i)
 
     for i in ibdne_dir:
-
-        yargs, label, dfs = load_dfs(i)
-
+        yargs, label, dfs = load_dfs(i)  # may override with ibdne subdir args
         if len(dfs) > 0:
             data_dict[label] = dfs
         else:
             print(f"No data found for path {i}")
 
+    if not data_dict:
+        print("No IBDNe results found to plot.")
+        return
+
     if yargs["custom_sim"]["path"]:
         truth_df = None
-
     else:
         truth_df = get_truth(yargs)
 
     fig, ax = plot_ne_estimates(data_dict, truth_df=truth_df)
-
     outputf = f"{path}/plot.png"
-
     plt.savefig(outputf, dpi=600)
-
     print(f"Saved file: {outputf}")
 
 
