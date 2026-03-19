@@ -240,7 +240,7 @@ def run(yaml_path, local, n_workers):
 
     # ── Phase 1: Pedigree creation ────────────────────────────────────────────
     ped_jobs = {}
-    if pedigree_mode:
+    if pedigree_mode and not args["pedigree"].get("pedigree_file"):
         print("Submitting pedigree jobs...")
         if local:
             executor.update_parameters(timeout_min=20)

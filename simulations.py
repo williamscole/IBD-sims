@@ -97,7 +97,13 @@ class Simulation:
             print(demography.debug())
 
             if args["pedigree"]["pedigree_mode"]:
-                pedigree = msprime.parse_pedigree(open(f"{path}_WF.pedigree"), sequence_length=sequence_length)
+
+                if args["pedigree"].get("pedigree_file"):
+                    ped_file = args["pedigree"]["pedigree_file"]
+                else:
+                    ped_file = f"{path}_WF.pedigree"
+
+                pedigree = msprime.parse_pedigree(open(ped_file), sequence_length=sequence_length)
 
                 init_state = msprime.sim_ancestry(initial_state=pedigree,
                                 model="fixed_pedigree",
