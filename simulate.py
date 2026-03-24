@@ -33,6 +33,58 @@ import plot as plot_module
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _coerce(value):
+    """Cast a string override value to the appropriate Python type."""
+    if value.lower() == "true":
+        return True
+    if value.lower() == "false":
+        return False
+    if value.lower() in ("null", "none"):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    return value
+
+
+def apply_overrides(args, overrides):
+    """
+    Apply a list of 'key=value' or 'nested.key=value' override strings to an
+    args dict, coercing types automatically.
+
+    Examples
+    --------
+    --set iter=5
+    --set pedigree.mating=mono
+    --set run_ibdne=false
+    --set custom_demo.object=ooa2
+    """
+    for item in overrides:
+        if "=" not in item:
+            raise ValueError(
+                f"Invalid override '{item}' — expected format KEY=VALUE or NESTED.KEY=VALUE"
+            )
+        raw_key, raw_val = item.split("=", 1)
+        keys = raw_key.strip().split(".")
+        value = _coerce(raw_val.strip())
+
+        # Walk / create nested dicts
+        d = args
+        for k in keys[:-1]:
+            if k not in d or not isinstance(d[k], dict):
+                d[k] = {}
+            d = d[k]
+        d[keys[-1]] = value
+        print(f"Override: {raw_key} = {value!r}")
+
+    return args
+
+
 def load_args(path):
     return yaml.safe_load(open(f"{path}/args.yaml"))
 
@@ -213,14 +265,19 @@ def run_post_processing(path, iter_n):
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
-def run(yaml_path, local, n_workers):
+def run(yaml_path, local, n_workers, overrides=None):
 
     # Set up output directory
     if os.path.isdir(yaml_path) and os.path.exists(f"{yaml_path}/args.yaml"):
         path = yaml_path  # resuming existing run
     else:
         raw_args = yaml.safe_load(open(yaml_path))
+        if overrides:
+            raw_args = apply_overrides(raw_args, overrides)
         path = make_output_dir(yaml_path, raw_args)
+        # Write the (potentially overridden) args back so the run dir reflects them
+        with open(f"{path}/args.yaml", "w") as f:
+            yaml.dump(raw_args, f, default_flow_style=False)
 
     print(f"Output directory: {path}")
 
@@ -336,9 +393,17 @@ def parse_args():
     parser.add_argument("--local", action="store_true", help="Run locally instead of submitting to Slurm")
     parser.add_argument("--workers", type=int, default=os.cpu_count(),
                         help="Number of parallel workers for local execution (default: all available CPUs)")
+    parser.add_argument(
+        "--set", nargs="*", metavar="KEY=VALUE", default=None,
+        help=(
+            "Override YAML args without editing the file. "
+            "Use dot notation for nested keys. "
+            "Examples: --set iter=5  --set pedigree.mating=mono run_ibdne=false"
+        ),
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.yaml, args.local, args.workers)
+    run(args.yaml, args.local, args.workers, overrides=args.set)
