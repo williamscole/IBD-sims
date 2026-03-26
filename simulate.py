@@ -176,6 +176,33 @@ def run_simulation(path, iter_n, chrom):
     """Phase 2: simulate one (iteration, chromosome) pair."""
     sim(path, iter_n, chrom)
 
+def concat_ibd_files(prefix, end_chr, hbd: bool = False):
+    ext = "hbd" if hbd else "ibd"
+
+    ibd_file = f"{prefix}.{ext}"
+    if not os.path.exists(f"{ibd_file}.gz"):
+        with open(ibd_file, "w") as out:
+            for chrom in range(1, end_chr + 1):
+                chr_file = f"{prefix}_chr{chrom}.{ext}.gz"
+                result = subprocess.run(["zcat", chr_file], capture_output=True, text=True)
+                for line in result.stdout.splitlines():
+                    parts = line.split()
+                    parts[4] = str(chrom)
+                    out.write(" ".join(parts) + "\n")
+                os.remove(chr_file)
+        subprocess.run(["gzip", ibd_file], check=True)
+
+def concat_vcf(prefix, end_chr):
+    vcf_file = f"{prefix}.vcf.gz"
+    chr_files = [f"{prefix}_chr{chrom}.vcf.gz" for chrom in range(1, end_chr + 1)]
+    
+    if not os.path.exists(vcf_file) and all(os.path.exists(f) for f in chr_files):
+        subprocess.run(
+            ["bcftools", "concat"] + chr_files + ["-Oz", "-o", vcf_file],
+            check=True
+        )
+        for f in chr_files:
+            os.remove(f)
 
 def run_post_processing(path, iter_n):
     """Phase 3: concatenate outputs and run IBDNe for one iteration."""
@@ -195,18 +222,13 @@ def run_post_processing(path, iter_n):
         concat_tmrca(path, iter_n, end_chr)
 
     # Concatenate IBD files
-    ibd_file = f"{prefix}.ibd"
-    if not os.path.exists(f"{ibd_file}.gz"):
-        with open(ibd_file, "w") as out:
-            for chrom in range(1, end_chr + 1):
-                chr_file = f"{prefix}_chr{chrom}.ibd.gz"
-                result = subprocess.run(["zcat", chr_file], capture_output=True, text=True)
-                for line in result.stdout.splitlines():
-                    parts = line.split()
-                    parts[4] = str(chrom)
-                    out.write(" ".join(parts) + "\n")
-                os.remove(chr_file)
-        subprocess.run(["gzip", ibd_file], check=True)
+    concat_ibd_files(prefix, end_chr, hbd=False)
+    if args.get("keep_all_files", False):
+        concat_ibd_files(prefix, end_chr, hbd=True)
+
+    # Concatenate VCF
+    if args.get("keep_all_files", False):
+        concat_vcf(prefix, end_chr)
 
     # Concatenate map files
     map_file = f"{prefix}.map"

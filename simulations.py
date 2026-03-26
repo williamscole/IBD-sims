@@ -283,6 +283,10 @@ def sim(path, iter_n, chrom):
 
     yargs = yaml.safe_load(open(f"{path}/args.yaml"))
 
+    if yargs.get("keep_all_files", False):
+        if subprocess.run(["which", "bcftools"], capture_output=True).returncode != 0:
+            raise RuntimeError("keep_all_files is True but bcftools not found in PATH")
+
     config = load_config()
 
     yargs["seed"] = seed
@@ -334,9 +338,9 @@ def sim(path, iter_n, chrom):
             df = pd.read_csv(f"{prefix}.ibd.gz", nrows=10, sep="\\s+", header=None)
 
         if df.shape[0] == 10:
-
-            os.remove(f"{prefix}.vcf.gz")
-            os.remove(f"{prefix}.hbd.gz")
+            if not yargs.get("keep_all_files", False):
+                os.remove(f"{prefix}.vcf.gz")
+                os.remove(f"{prefix}.hbd.gz")
 
             print("Success!")
 
