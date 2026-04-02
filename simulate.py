@@ -22,9 +22,10 @@ import tempfile
 import time
 import yaml
 import submitit
+import itertools as it
 from pathlib import Path
 
-from simulations import sim, create_pedigree, base_seed, load_config
+from simulations import sim, base_seed, load_config
 from concat_tmrca import concat_tmrca
 from purple import readin_ibd
 from filter_ibd import filter_ibd
@@ -64,7 +65,7 @@ def apply_overrides(args, overrides):
     --set run_ibdne=false
     --set custom_demo.object=ooa2
     """
-    for item in overrides:
+    for item in it.chain(*overrides):
         if "=" not in item:
             raise ValueError(
                 f"Invalid override '{item}' — expected format KEY=VALUE or NESTED.KEY=VALUE"
@@ -168,8 +169,12 @@ def wait_for_jobs(jobs):
 # ── Job functions ─────────────────────────────────────────────────────────────
 
 def run_pedigree(path, iter_n):
-    """Phase 1: create WF pedigree for one iteration."""
-    create_pedigree(path, iter_n)
+    args = load_args(path)
+    from simulations import DemographicSetup, WFSetup
+    demography = DemographicSetup.create(args)
+    args["iteration_seed"] = base_seed(path, iter_n)
+    args["iter_n"] = iter_n
+    WFSetup.create(args, path, demography)
 
 
 def run_simulation(path, iter_n, chrom):
@@ -291,13 +296,12 @@ def run(yaml_path, local, n_workers, overrides=None):
 
     # Set up output directory
     if os.path.isdir(yaml_path) and os.path.exists(f"{yaml_path}/args.yaml"):
-        path = yaml_path  # resuming existing run
+        path = yaml_path
     else:
         raw_args = yaml.safe_load(open(yaml_path))
         if overrides:
             raw_args = apply_overrides(raw_args, overrides)
         path = make_output_dir(yaml_path, raw_args)
-        # Write the (potentially overridden) args back so the run dir reflects them
         with open(f"{path}/args.yaml", "w") as f:
             yaml.dump(raw_args, f, default_flow_style=False)
 
@@ -318,7 +322,6 @@ def run(yaml_path, local, n_workers, overrides=None):
         executor.update_parameters(use_srun=False)
 
     # ── Phase 1: Pedigree creation ────────────────────────────────────────────
-    ped_jobs = {}
     if pedigree_mode and not args["pedigree"].get("pedigree_file"):
         print("Submitting pedigree jobs...")
         if local:
@@ -326,15 +329,13 @@ def run(yaml_path, local, n_workers, overrides=None):
         else:
             executor.update_parameters(mem=4096, time=20, cpus_per_task=1)
 
-        for iter_n in range(1, n_iter + 1):
-            ped_jobs[iter_n] = executor.submit(run_pedigree, path, iter_n)
+        ped_iters = list(range(1, n_iter + 1))
+        ped_jobs = executor.map_array(run_pedigree, [path] * len(ped_iters), ped_iters)
 
-        # For local runs, wait for all pedigree jobs before proceeding
-        if local:
-            failed = wait_for_jobs(list(ped_jobs.values()))
-            if failed:
-                print(f"{len(failed)} pedigree jobs failed, aborting.")
-                sys.exit(1)
+        failed = wait_for_jobs(ped_jobs)
+        if failed:
+            print(f"{len(failed)} pedigree jobs failed, aborting.")
+            sys.exit(1)
 
     # ── Phase 2: Simulation ───────────────────────────────────────────────────
     print("Submitting simulation jobs...")
@@ -348,24 +349,24 @@ def run(yaml_path, local, n_workers, overrides=None):
             array_parallelism=100
         )
 
+    tasks = [
+        (iter_n, chrom)
+        for iter_n in range(1, n_iter + 1)
+        for chrom in range(1, end_chr + 1)
+        if not is_sim_complete(path, iter_n, chrom)
+    ]
+
     sim_jobs = {}
-    for iter_n in range(1, n_iter + 1):
-        sim_jobs[iter_n] = {}
-
-        if not local and pedigree_mode:
-            executor.update_parameters(
-                dependency=f"afterok:{ped_jobs[iter_n].job_id}"
-            )
-
-        for chrom in range(1, end_chr + 1):
-            if is_sim_complete(path, iter_n, chrom):
-                print(f"Skipping iter {iter_n} chr {chrom} (already complete)")
-                continue
-            sim_jobs[iter_n][chrom] = executor.submit(run_simulation, path, iter_n, chrom)
-
-        if not local and pedigree_mode:
-            executor.update_parameters(dependency=None)
-
+    if tasks:
+        jobs = executor.map_array(
+            run_simulation,
+            [path] * len(tasks),
+            [t[0] for t in tasks],
+            [t[1] for t in tasks],
+        )
+        for (iter_n, chrom), job in zip(tasks, jobs):
+            sim_jobs.setdefault(iter_n, {})[chrom] = job
+    
     # ── Phase 3: Post-processing ──────────────────────────────────────────────
     print("Waiting for simulations and submitting post-processing...")
     if local:
@@ -416,7 +417,7 @@ def parse_args():
     parser.add_argument("--workers", type=int, default=os.cpu_count(),
                         help="Number of parallel workers for local execution (default: all available CPUs)")
     parser.add_argument(
-        "--set", nargs="*", metavar="KEY=VALUE", default=None,
+        "--set", nargs="*", metavar="KEY=VALUE", default=None, action="append",
         help=(
             "Override YAML args without editing the file. "
             "Use dot notation for nested keys. "
