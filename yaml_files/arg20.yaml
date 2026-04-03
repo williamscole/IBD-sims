@@ -1,0 +1,67 @@
+# House keeping arguments
+base_dir: test
+dir_name: ibd-sims
+keep_all_files: true
+
+# Computational resources for simulation
+gb: 6
+sim_time: --time=30:00
+nthreads: 8
+
+# Simulation arguments
+hapmap_chr1: /users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr1.txt.gz
+
+custom_demo:
+  object: constant_Ne
+  path: demography.py
+custom_sim:
+  object: null
+  path: null
+end_chr: 30
+
+iter: 2
+label: 'constant_Ne
+
+  n=1000
+
+  DTWF (di)
+
+  unfiltered'
+
+pedigree:
+  gen_end: 25
+  mating: di
+  pedigree_mode: true
+  pedigree_file: null
+
+samples: 1000
+
+# Post-processing arguments
+post_process: test #ibdne,purple # or just none
+
+ibdne:
+  path: post_modules.py
+  object: PostProcessIBDNe
+
+  ibd_filter: null
+  ibdne_jar: /users/cwilli50/ibdne.23Apr20.ae9.jar
+  ibdne_time: --time=1:00:00
+  mincm: 2
+  nboots: 80
+  nits: 1000
+  npairs: 0
+  nthreads: 8
+  trimcm: 0.2
+  filtersamples: false
+  gmax: 300
+  gmin: 1
+
+purple_nodes:
+  path: post_modules.py
+  object: PostProcessPurple
+
+test:
+  path: post_modules.py
+  object: PostProcessTest
+
+

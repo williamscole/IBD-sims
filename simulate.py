@@ -30,61 +30,11 @@ from concat_tmrca import concat_tmrca
 from purple import readin_ibd
 from filter_ibd import filter_ibd
 import plot as plot_module
+from post_process import postprocess
+from utils import apply_overrides
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _coerce(value):
-    """Cast a string override value to the appropriate Python type."""
-    if value.lower() == "true":
-        return True
-    if value.lower() == "false":
-        return False
-    if value.lower() in ("null", "none"):
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    try:
-        return float(value)
-    except ValueError:
-        pass
-    return value
-
-
-def apply_overrides(args, overrides):
-    """
-    Apply a list of 'key=value' or 'nested.key=value' override strings to an
-    args dict, coercing types automatically.
-
-    Examples
-    --------
-    --set iter=5
-    --set pedigree.mating=mono
-    --set run_ibdne=false
-    --set custom_demo.object=ooa2
-    """
-    for item in it.chain(*overrides):
-        if "=" not in item:
-            raise ValueError(
-                f"Invalid override '{item}' — expected format KEY=VALUE or NESTED.KEY=VALUE"
-            )
-        raw_key, raw_val = item.split("=", 1)
-        keys = raw_key.strip().split(".")
-        value = _coerce(raw_val.strip())
-
-        # Walk / create nested dicts
-        d = args
-        for k in keys[:-1]:
-            if k not in d or not isinstance(d[k], dict):
-                d[k] = {}
-            d = d[k]
-        d[keys[-1]] = value
-        print(f"Override: {raw_key} = {value!r}")
-
-    return args
-
 
 def load_args(path):
     return yaml.safe_load(open(f"{path}/args.yaml"))
@@ -210,16 +160,20 @@ def concat_vcf(prefix, end_chr):
             os.remove(f)
 
 def run_post_processing(path, iter_n):
-    """Phase 3: concatenate outputs and run IBDNe for one iteration."""
+    """Phase 3: concatenate outputs and run post-processing"""
     args = load_args(path)
     config = load_config()
     end_chr = args["end_chr"]
     prefix = f"{path}/iter{iter_n}"
 
     # Purple node matrix
-    purple_file = f"{prefix}.npy"
-    if not os.path.exists(purple_file):
-        readin_ibd(f"{prefix}_chr1.ibd.gz", n_chrom=end_chr, file_to_write=purple_file)
+    # TODOD implement
+    # purple_file = f"{prefix}.npy"
+    # if not os.path.exists(purple_file):
+    #     readin_ibd(f"{prefix}_chr1.ibd.gz", n_chrom=end_chr, file_to_write=purple_file)
+
+    # Post process
+    postprocess(args, path=path, n_iter=None, iter_n=iter_n)
 
     # Concatenate TMRCAs
     tmrca_file = f"{prefix}.tmrca.gz"
@@ -248,46 +202,7 @@ def run_post_processing(path, iter_n):
                         out.write(" ".join(parts) + "\n")
                 os.remove(chr_map)
 
-    # Run IBDNe
-    if args.get("run_ibdne"):
-        dir_name = args.get("dir_name", "ibdne")
-        out_dir = f"{path}/{dir_name}"
-        os.makedirs(out_dir, exist_ok=True)
-        shutil.copy(f"{path}/args.yaml", f"{out_dir}/args.yaml")
-
-        gb = int(args["gb"] * 1.8)
-
-        with tempfile.NamedTemporaryFile(suffix=".ibd", delete=False) as tmp:
-            tmp_path = tmp.name
-
-        try:
-            filter_ibd(f"{prefix}.ibd.gz", args["samples"], tmp_path, args.get("ibd_filter"))
-
-            ibdne_cmd = (
-                f"cat {tmp_path} |"
-                f" java -jar -Xmx{gb}g {config['ibdne_jar']}"
-                f" map={prefix}.map"
-                f" out={out_dir}/iter{iter_n}"
-                f" nthreads={args['nthreads']}"
-                f" filtersamples={str(args['filtersamples']).lower()}"
-                f" npairs={args['npairs']}"
-                f" nits={args['nits']}"
-                f" nboots={args['nboots']}"
-                f" mincm={args['mincm']}"
-                f" trimcm={args['trimcm']}"
-                f" gmin={args['gmin']}"
-                f" gmax={args['gmax']}"
-            )
-
-            proc = subprocess.run(ibdne_cmd, shell=True, capture_output=True, text=True)
-
-            if proc.returncode != 0:
-                raise RuntimeError(f"IBDNe failed for iter {iter_n}:\n{proc.stderr}")
-
-        finally:
-            os.remove(tmp_path)
-
-    print(f"Post-processing complete: iter {iter_n}")
+    print(f"Simulation complete: iter {iter_n}")
 
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
@@ -312,7 +227,7 @@ def run(yaml_path, local, n_workers, overrides=None):
     end_chr = args["end_chr"]
     pedigree_mode = args["pedigree"]["pedigree_mode"]
     sim_timeout = parse_slurm_time(args["sim_time"])
-    ibdne_timeout = parse_slurm_time(args["ibdne_time"])
+    ibdne_timeout = parse_slurm_time(args["ibdne"]["ibdne_time"])
 
     # Set up executor
     if local:
