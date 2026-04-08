@@ -7,6 +7,7 @@ import numpy as np
 import yaml
 import os
 
+
 class Kinship:
     def __init__(self, path):
         yargs = yaml.safe_load(open(f"{path}/args.yaml"))
@@ -18,7 +19,7 @@ class Kinship:
         elif end_chr == 22:
             self.tot = 0
             for i in range(1, 23):
-                map_df = pd.read_csv(yargs["hapmap_chr1"].replace("chr1", f"chr{i}"))
+                map_df = pd.read_csv(yargs["hapmap_chr1"].replace("chr1", f"chr{i}"), sep="\\s+")
                 self.tot += map_df.iloc[-1]["Map(cM)"] - map_df.iloc[0]["Map(cM)"]
         elif end_chr == 2:
             self.tot = 200
@@ -53,8 +54,8 @@ def subset_close(related_df, node_set, target=1000):
         nodes.add(row.node2)
         added_nodes.extend([row.node1, row.node2])
     if len(nodes) == target + 1:
-        ordered_nodes = sorted([[added_nodes.index(i),i] for i in nodes], key=lambda x: x[0])
-        to_remove = ordered_nodes[-1][1]
+        nodes = sorted([[added_nodes.index(i), i] for i in nodes], key=lambda x: x[0])
+        to_remove = nodes[-1][1]
         nodes.discard(to_remove)
     elif len(nodes) < target:
         n_to_add = target - len(nodes)
@@ -63,7 +64,7 @@ def subset_close(related_df, node_set, target=1000):
 
     return nodes
 
-                
+
 def prune_relatives(g, target=1000, out_nodes=[]):
     cur_l = len(out_nodes)
 
@@ -77,7 +78,7 @@ def prune_relatives(g, target=1000, out_nodes=[]):
         cur_nodes = []
 
         while True:
-            degree_list = sorted([[sub.degree(i),i] for i in sub_nodes if i not in cur_nodes], key=lambda x: x[0])
+            degree_list = sorted([[sub.degree(i), i] for i in sub_nodes if i not in cur_nodes], key=lambda x: x[0])
             add = False
 
             for d, node1 in degree_list:
@@ -90,7 +91,7 @@ def prune_relatives(g, target=1000, out_nodes=[]):
                     cur_nodes.append(node1)
                     cur_l += 1
                     break
-                    
+
             if add == False or cur_l >= target:
                 break
 
@@ -100,46 +101,126 @@ def prune_relatives(g, target=1000, out_nodes=[]):
     for i, j in it.combinations(out_nodes, r=2):
         k = g.get_edge_data(i, j, {"weight": 0})["weight"]
         ks.append(k)
-    # print(f"Mean: {np.mean(ks)}, max: {max(ks)}, number: {len(out_nodes)}")
 
     return np.random.choice(out_nodes, target, replace=False) if len(out_nodes) > target else out_nodes
 
-def filter_ibd(ibd_path, n_samples, output, filtering="none"):
 
+# --- Node file helpers ---
+
+def _node_file_path(ibd_path, label):
+    """Return path to the node list file for a given label, next to the IBD file.
+
+    e.g. /path/to/iter1.ibd.gz -> /path/to/iter1_unrelated.txt
+    """
+    base = ibd_path.replace(".ibd.gz", "").replace(".ibd", "")
+    return f"{base}_{label}.txt"
+
+
+def _write_node_file(nodes, ibd_path, label):
+    path = _node_file_path(ibd_path, label)
+    with open(path, "w") as f:
+        for node in sorted(nodes):
+            f.write(f"{node}\n")
+    print(f"Wrote {len(nodes)} nodes to {path}")
+
+
+def _read_node_file(ibd_path, label):
+    """Load a node file if it exists, returning a set of node IDs or None."""
+    path = _node_file_path(ibd_path, label)
+    if os.path.exists(path):
+        with open(path) as f:
+            return set(line.strip() for line in f if line.strip())
+    return None
+
+
+# --- Main public functions ---
+
+def write_samples(ibd_path, n_samples):
+    """Compute and write node files for all three filtering modes.
+
+    Creates iter{i}_random.txt, iter{i}_related.txt, iter{i}_unrelated.txt
+    next to the IBD file. Safe to call multiple times — will overwrite existing files.
+    """
     ibd_df = pd.read_csv(ibd_path, sep="\\s+", header=None)
+    all_nodes = {f"tsk_{i}" for i in range(n_samples)}
+    target = n_samples // 10
 
-    if filtering == "none" or filtering == "null" or filtering == "" or filtering is None:
-        ibd_df.to_csv(output, sep=" ", header=False, index=False)
-        return
+    # random — no kinship needed
+    random_nodes = set(np.random.choice(list(all_nodes), target, replace=False))
+    _write_node_file(random_nodes, ibd_path, "random")
 
+    # related + unrelated both need kinship
     kinship_obj = Kinship(os.path.dirname(ibd_path))
 
     rows = []
     for pair, pair_df in ibd_df.groupby([0, 2]):
-        if pair_df[7].sum()>10:
+        if pair_df[7].sum() > 10:
             rows.append([*pair, pair_df[7].sum()])
 
     kinship = pd.DataFrame(rows, columns=["node1", "node2", "k"]).sort_values("k", ascending=False)
     kinship["related"] = kinship["k"].apply(kinship_obj.assign_related)
     related = kinship[kinship.related]
 
-    all_nodes = {f"tsk_{i}" for i in range(n_samples)}
+    related_nodes = subset_close(related, all_nodes, target=target)
+    _write_node_file(related_nodes, ibd_path, "related")
 
-    if filtering == "related":
+    g = nx.Graph()
+    g.add_nodes_from(list(all_nodes))
+    g.add_edges_from(related[["node1", "node2"]].values)
+    unrelated_nodes = set(prune_relatives(g, target=target))
+    _write_node_file(unrelated_nodes, ibd_path, "unrelated")
 
-        nodes = subset_close(related, all_nodes, target=n_samples // 10)
 
-    elif filtering == "unrelated":
-        g = nx.Graph()
+def filter_ibd(ibd_path, n_samples, output, filtering="none"):
 
-        g.add_nodes_from(list(all_nodes))
+    # Normalise filtering value for backward compatibility
+    if filtering == "null" or filtering == "" or filtering is None:
+        filtering = "none"
 
-        g.add_edges_from(related[["node1", "node2"]].values)
+    if filtering not in ("none", "related", "unrelated"):
+        raise ValueError(f"Unknown filtering mode: {filtering!r}")
 
-        nodes = prune_relatives(g, target=n_samples // 10)
+    label = "random" if filtering == "none" else filtering
 
+    # Try to load cached node file first
+    nodes = _read_node_file(ibd_path, label)
+
+    if nodes is not None:
+        print(f"Loaded {len(nodes)} {label} nodes from cache.")
+    else:
+        print(f"No cached node file found for '{label}', computing fresh.")
+        all_nodes = {f"tsk_{i}" for i in range(n_samples)}
+        target = n_samples // 10
+
+        if filtering == "none":
+            nodes = set(np.random.choice(list(all_nodes), target, replace=False))
+
+        else:
+            ibd_df_full = pd.read_csv(ibd_path, sep="\s+", header=None)
+            kinship_obj = Kinship(os.path.dirname(ibd_path))
+
+            rows = []
+            for pair, pair_df in ibd_df_full.groupby([0, 2]):
+                if pair_df[7].sum() > 10:
+                    rows.append([*pair, pair_df[7].sum()])
+
+            kinship = pd.DataFrame(rows, columns=["node1", "node2", "k"]).sort_values("k", ascending=False)
+            kinship["related"] = kinship["k"].apply(kinship_obj.assign_related)
+            related = kinship[kinship.related]
+
+            if filtering == "related":
+                nodes = subset_close(related, all_nodes, target=target)
+
+            elif filtering == "unrelated":
+                g = nx.Graph()
+                g.add_nodes_from(list(all_nodes))
+                g.add_edges_from(related[["node1", "node2"]].values)
+                nodes = set(prune_relatives(g, target=target))
+
+        _write_node_file(nodes, ibd_path, label)
+
+    ibd_df = pd.read_csv(ibd_path, sep="\s+", header=None)
     ibd_df = ibd_df[ibd_df.apply(lambda x: x[0] in nodes and x[2] in nodes, axis=1)]
-
     ibd_df.to_csv(output, sep=" ", header=False, index=False)
 
 
@@ -150,4 +231,3 @@ if __name__ == "__main__":
     filtering = sys.argv[3] if len(sys.argv) > 3 else "none"
 
     filter_ibd(ibd_path, n_samples, sys.stdout, filtering)
-
