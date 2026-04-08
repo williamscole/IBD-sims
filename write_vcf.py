@@ -67,7 +67,7 @@ def write_vcf(ts, output, chrom, rate, seed, snps_pkl="ukb_snps.pkl"):
     out_ts = ts.delete_sites(delete_sites)
 
     map_df = pd.DataFrame({"bp": out_ts.sites_position.astype(int)})
-    map_df["chrom"] = 1
+    map_df["chrom"] = str(chrom)
     map_df["rsid"] = map_df.bp.apply(lambda x: f"chr{chrom}_{x}")
 
     if rate == 1e-8:
@@ -79,6 +79,7 @@ def write_vcf(ts, output, chrom, rate, seed, snps_pkl="ukb_snps.pkl"):
     map_df[["chrom", "rsid", "cm", "bp"]].to_csv(f"{output}.map", header=False, index=False, sep=" ")
 
     with gzip.open(f"{output}.vcf.gz", "wt") as f:
-        out_ts.write_vcf(f)
+        out_ts.write_vcf(f, contig_id=str(chrom))
+
 
     print(f"Wrote VCF: {output}.vcf.gz")
