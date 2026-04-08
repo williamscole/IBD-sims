@@ -28,10 +28,30 @@ from pathlib import Path
 from simulations import sim, base_seed, load_config
 from concat_tmrca import concat_tmrca
 from purple import readin_ibd
-from filter_ibd import filter_ibd
+from filter_ibd import filter_ibd, write_samples
 import plot as plot_module
 from post_process import postprocess
 from utils import apply_overrides
+
+
+# Terminal Slurm states that indicate a job will not recover
+_FAILED_STATES = {"FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY", "NODE_FAIL", "PREEMPTED"}
+
+
+def _sacct_state(job_id):
+    """Query Slurm accounting for the final state of a job.
+
+    Used as a fallback when submitit reports UNKNOWN — this happens for
+    array tasks that completed and aged out of squeue before submitit's
+    own sacct query finds them.
+    """
+    result = subprocess.run(
+        ["sacct", "-j", str(job_id), "--format=State", "--noheader", "-P", "--parsable2"],
+        capture_output=True, text=True,
+    )
+    # First line is the job-level state (skip .batch and .extern steps)
+    lines = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+    return lines[0] if lines else "UNKNOWN"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -95,18 +115,18 @@ def is_post_complete(path, iter_n):
     return os.path.exists(f"{path}/iter{iter_n}.ibd.gz")
 
 
-def wait_for_jobs(jobs):
-    """Poll submitit jobs until all finish. Return list of failed jobs."""
+def wait_for_jobs(jobs, path=None, end_chr=None):
+    """Poll jobs until all finish. Return list of failed jobs."""
     pending = list(jobs)
     failed = []
     while pending:
         still_pending = []
         for job in pending:
-            state = job.state
+            state = _sacct_state(job.job_id)
             if state == "COMPLETED":
-                pass  # success
-            elif state == "FAILED":
-                print(f"Job {job.job_id} failed")
+                pass
+            elif state in _FAILED_STATES:
+                print(f"Job {job.job_id} terminated with state {state}")
                 failed.append(job)
             else:
                 still_pending.append(job)
@@ -133,7 +153,6 @@ def run_simulation(path, iter_n, chrom):
 
 def concat_ibd_files(prefix, end_chr, hbd: bool = False):
     ext = "hbd" if hbd else "ibd"
-
     ibd_file = f"{prefix}.{ext}"
     if not os.path.exists(f"{ibd_file}.gz"):
         with open(ibd_file, "w") as out:
@@ -144,52 +163,31 @@ def concat_ibd_files(prefix, end_chr, hbd: bool = False):
                     parts = line.split()
                     parts[4] = str(chrom)
                     out.write(" ".join(parts) + "\n")
-                os.remove(chr_file)
         subprocess.run(["gzip", ibd_file], check=True)
+
+def remove_ibd_chr_files(prefix, end_chr, hbd: bool = False):
+    ext = "hbd" if hbd else "ibd"
+    for chrom in range(1, end_chr + 1):
+        chr_file = f"{prefix}_chr{chrom}.{ext}.gz"
+        if os.path.exists(chr_file):
+            os.remove(chr_file)
 
 def concat_vcf(prefix, end_chr):
     vcf_file = f"{prefix}.vcf.gz"
     chr_files = [f"{prefix}_chr{chrom}.vcf.gz" for chrom in range(1, end_chr + 1)]
-    
     if not os.path.exists(vcf_file) and all(os.path.exists(f) for f in chr_files):
         subprocess.run(
             ["bcftools", "concat"] + chr_files + ["-Oz", "-o", vcf_file],
             check=True
         )
-        for f in chr_files:
-            os.remove(f)
 
-def run_post_processing(path, iter_n):
-    """Phase 3: concatenate outputs and run post-processing"""
-    args = load_args(path)
-    config = load_config()
-    end_chr = args["end_chr"]
-    prefix = f"{path}/iter{iter_n}"
+def remove_vcf_chr_files(prefix, end_chr):
+    for chrom in range(1, end_chr + 1):
+        chr_file = f"{prefix}_chr{chrom}.vcf.gz"
+        if os.path.exists(chr_file):
+            os.remove(chr_file)
 
-    # Purple node matrix
-    # TODOD implement
-    # purple_file = f"{prefix}.npy"
-    # if not os.path.exists(purple_file):
-    #     readin_ibd(f"{prefix}_chr1.ibd.gz", n_chrom=end_chr, file_to_write=purple_file)
-
-    # Post process
-    postprocess(args, path=path, n_iter=None, iter_n=iter_n)
-
-    # Concatenate TMRCAs
-    tmrca_file = f"{prefix}.tmrca.gz"
-    if not os.path.exists(tmrca_file):
-        concat_tmrca(path, iter_n, end_chr)
-
-    # Concatenate IBD files
-    concat_ibd_files(prefix, end_chr, hbd=False)
-    if args.get("keep_all_files", False):
-        concat_ibd_files(prefix, end_chr, hbd=True)
-
-    # Concatenate VCF
-    if args.get("keep_all_files", False):
-        concat_vcf(prefix, end_chr)
-
-    # Concatenate map files
+def concat_map_files(prefix, end_chr):
     map_file = f"{prefix}.map"
     if not os.path.exists(map_file):
         with open(map_file, "w") as out:
@@ -200,10 +198,45 @@ def run_post_processing(path, iter_n):
                         parts = line.split()
                         parts[0] = str(chrom)
                         out.write(" ".join(parts) + "\n")
-                os.remove(chr_map)
+
+def remove_map_chr_files(prefix, end_chr):
+    for chrom in range(1, end_chr + 1):
+        chr_map = f"{prefix}_chr{chrom}.map"
+        if os.path.exists(chr_map):
+            os.remove(chr_map)
+
+def run_post_processing(path, iter_n):
+    """Phase 3: concatenate outputs and run post-processing"""
+    args = load_args(path)
+    config = load_config()
+    end_chr = args["end_chr"]
+    prefix = f"{path}/iter{iter_n}"
+
+    # Concat files
+    concat_ibd_files(prefix, end_chr)
+    concat_map_files(prefix, end_chr)
+
+    tmrca_file = f"{prefix}.tmrca.gz"
+    if not os.path.exists(tmrca_file):
+        concat_tmrca(path, iter_n, end_chr)
+
+    if args.get("keep_all_files", False):
+        concat_vcf(prefix, end_chr)
+        concat_ibd_files(prefix, end_chr, hbd=True)
+
+    # Write out samples for filtering
+    write_samples(f"{prefix}.ibd.gz", args["samples"])
+
+    # Post process
+    postprocess(args, path=path, n_iter=None, iter_n=iter_n)
+
+    # Delete intermediate files
+    remove_ibd_chr_files(prefix, end_chr, hbd=False)
+    remove_ibd_chr_files(prefix, end_chr, hbd=True)
+    remove_vcf_chr_files(prefix, end_chr)
+    remove_map_chr_files(prefix, end_chr)
 
     print(f"Simulation complete: iter {iter_n}")
-
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
@@ -281,6 +314,16 @@ def run(yaml_path, local, n_workers, overrides=None):
         )
         for (iter_n, chrom), job in zip(tasks, jobs):
             sim_jobs.setdefault(iter_n, {})[chrom] = job
+
+    for iter_n, jobs in sim_jobs.items():
+        print(f"iter {iter_n}: {list(jobs.keys())} job ids: {[j.job_id for j in jobs.values()]}")
+
+    time.sleep(15)
+
+    for iter_n, jobs in sim_jobs.items():
+        for chrom, job in jobs.items():
+            print(f"iter {iter_n} chr {chrom}: job_id={job.job_id} state={job.state}")
+
     
     # ── Phase 3: Post-processing ──────────────────────────────────────────────
     print("Waiting for simulations and submitting post-processing...")
@@ -296,6 +339,7 @@ def run(yaml_path, local, n_workers, overrides=None):
 
     post_jobs = {}
     for iter_n in range(1, n_iter + 1):
+        print(f"iter {iter_n}: is_post_complete={is_post_complete(path, iter_n)}")
         if is_post_complete(path, iter_n):
             print(f"Skipping post-processing iter {iter_n} (already complete)")
             continue
@@ -306,6 +350,8 @@ def run(yaml_path, local, n_workers, overrides=None):
             if failed:
                 print(f"Warning: {len(failed)} simulation jobs failed for iter {iter_n}, skipping post-processing")
                 continue
+
+        # import pdb; pdb.set_trace()
 
         post_jobs[iter_n] = executor.submit(run_post_processing, path, iter_n)
 
