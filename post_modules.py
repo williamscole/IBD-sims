@@ -4,6 +4,9 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+import shutil
+import pandas as pd
+from configparser import ConfigParser
 
 from post_process import PostProcessor
 from simulations import load_config
@@ -108,3 +111,50 @@ class PostProcessIBDNe(PostProcessor):
 
         finally:
             os.remove(tmp_path)
+
+class PostProcessHapNeLD:
+
+    sub_config_key = "hapne_ld"
+
+    def _tmp_map(self, input_map):
+        pass
+
+    def _single_iter(self, iter_n):
+
+        prefix = f"{self.path}/iter{iter_n}"
+
+        map_file = hapne_tmp_map(f"{prefix}.map")
+
+class PostProcessHapNeLD(PostProcessor):
+    sub_config_key = "hapne_ld"
+    resource_fields = ["local", "workers", "mem_gb", "time_min"]
+
+    def execute(self):
+        self._execute_helper()
+
+        if self.single_iter:
+            self._single_iter(self.iter_n)
+        else:
+            self._execute_loop()
+
+    def _tmp_map(self, input_map: str) -> tuple[str, str]:
+        return hapne_tmp_map(input_map)
+
+    def _single_iter(self, iter_n: int):
+        from run_hapne import run_hapne_ld
+
+        cfg = self._get_sub_config()
+        prefix = f"{self.path}/iter{iter_n}"
+        iter_out_dir = os.path.join(self.out_dir, f"iter{iter_n}")
+        os.makedirs(iter_out_dir, exist_ok=True)
+
+        run_hapne_ld(
+            vcf_file=prefix,
+            input_map=f"{prefix}.map",
+            output_folder=iter_out_dir,
+            population_name=getattr(cfg, "filter", "unfiltered"),
+            end_chr=self.config.end_chr,
+        )
+
+
+
