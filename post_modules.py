@@ -154,6 +154,7 @@ class PostProcessHapNeLD(PostProcessor):
             output_folder=iter_out_dir,
             population_name=getattr(cfg, "filter", "unfiltered"),
             end_chr=self.config.end_chr,
+            workers=cfg.nthreads
         )
 
 
