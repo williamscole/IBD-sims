@@ -509,6 +509,12 @@ def run_hapne_ibd(
         hapne_io_module.get_regions = _get_regions
         hapne_io_module.get_region = _get_region
 
+    
+    # Get the number of indv in the file
+    tmp_ibd_df = pd.read_csv(ibd_file, header=None, sep="\\s+")
+    n_samples = len(set(tmp_ibd_df[0].values) | set(tmp_ibd_df[2].values))
+    print(f"{n_samples} unique IDs found in IBD file. nb_samples set to {nb_samples}.")
+
     # Split IBD file by chromosome arm
     print("[HapNe-IBD] stage 1: split IBD by chromosome arm")
     if end_chr != 22:

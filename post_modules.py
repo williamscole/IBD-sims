@@ -85,7 +85,7 @@ class PostProcessIBDNe(PostProcessor):
                 f"{prefix}.ibd.gz",
                 self.config.samples,
                 tmp_path,
-                cfg.ibd_filter,
+                cfg.filter,
             )
 
             ibdne_cmd = (
