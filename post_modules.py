@@ -85,7 +85,7 @@ class PostProcessIBDNe(PostProcessor):
                 f"{prefix}.ibd.gz",
                 self.config.samples,
                 tmp_path,
-                cfg.filter,
+                _get_filter(self),
             )
 
             ibdne_cmd = (
@@ -118,6 +118,19 @@ def _needs_filtering(filtering):
     return filtering is not None and filtering not in ("null", "", "none", "unfiltered")
 
 
+def _get_filter(processor):
+    """Resolve the filter value: sub-config overrides top-level.
+
+    Checks processor's sub-config for 'filter' first; if not set,
+    falls back to self.config.filter (the top-level default).
+    """
+    sub = processor._get_sub_config()
+    value = getattr(sub, "filter", None)
+    if value is not None:
+        return value
+    return getattr(processor.config, "filter", None)
+
+
 class PostProcessHapNeLD(PostProcessor):
     sub_config_key = "hapne_ld"
     resource_fields = ["local", "workers", "mem_gb", "time_min"]
@@ -136,12 +149,11 @@ class PostProcessHapNeLD(PostProcessor):
     def _single_iter(self, iter_n: int):
         from run_hapne import run_hapne_ld
 
-        cfg = self._get_sub_config()
         prefix = f"{self.path}/iter{iter_n}"
         iter_out_dir = os.path.join(self.out_dir, f"iter{iter_n}")
         os.makedirs(iter_out_dir, exist_ok=True)
 
-        filtering = getattr(cfg, "filter", None)
+        filtering = _get_filter(self)
 
         # Resolve keep file: use the cached iter{i}_{label}.txt node file
         # (one ID per row), which is exactly the format HapNe expects.
@@ -181,12 +193,11 @@ class PostProcessHapNeIBD(PostProcessor):
     def _single_iter(self, iter_n: int):
         from run_hapne import run_hapne_ibd
 
-        cfg = self._get_sub_config()
         prefix = f"{self.path}/iter{iter_n}"
         iter_out_dir = os.path.join(self.out_dir, f"iter{iter_n}")
         os.makedirs(iter_out_dir, exist_ok=True)
 
-        filtering = getattr(cfg, "filter", None)
+        filtering = _get_filter(self)
         population_name = filtering if _needs_filtering(filtering) else "unfiltered"
 
         if _needs_filtering(filtering):
