@@ -253,6 +253,7 @@ def run_hapne_ld(
     end_chr: int,
     genome_build: str = "grch37",
     workers: int = 1,
+    keep_file: str = None,
 ):
     """Run the full HapNe-LD pipeline on simulated data."""
 
@@ -332,6 +333,9 @@ def run_hapne_ld(
             "genome_build": genome_build,
             "pseudo_diploid": "False",
         }
+
+        if keep_file is not None:
+            hapne_config["CONFIG"]["keep"] = keep_file
 
         # Serialisable copy for worker processes
         config_dict = dict(hapne_config["CONFIG"])
