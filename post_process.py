@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Callable, Optional
 import shutil
+import submitit
 
 from utils import apply_overrides
 
@@ -177,10 +178,19 @@ class PostProcessor(ABC):
         self.config.dump_config(f"{out_dir}/args.yaml")
         return out_dir
 
-    def _execute_loop(self):
-        """Run _single_iter for each iteration, locally or via Slurm."""
-        import submitit
+    def _submit_jobs(self):
+        """Submit Slurm jobs and return them without waiting."""
+        executor = submitit.SlurmExecutor(folder=f"{self.path}/slurm")
+        executor.update_parameters(
+            mem=f"{self._get_resource('mem_gb')}GB",
+            time=self._get_resource("time_min"),
+            cpus_per_task=self._get_resource("workers"),
+            use_srun=False,
+        )
+        iters = list(range(1, self.n_iter + 1))
+        return executor.map_array(self._single_iter, iters)
 
+    def _execute_loop(self):
         local = self._get_resource("local")
         iters = list(range(1, self.n_iter + 1))
 
@@ -194,15 +204,7 @@ class PostProcessor(ABC):
                 for iter_n in iters:
                     self._single_iter(iter_n)
         else:
-            executor = submitit.SlurmExecutor(folder=f"{self.path}/slurm")
-            executor.update_parameters(
-                mem=f"{self._get_resource('mem_gb')}GB",
-                time=self._get_resource("time_min"),
-                cpus_per_task=self._get_resource("workers"),
-                use_srun=False,
-            )
-            jobs = executor.map_array(self._single_iter, iters)
-            for job in jobs:
+            for job in self._submit_jobs():
                 job.result()
 
     def _single_iter(self, iter_n):
@@ -214,32 +216,40 @@ class PostProcessor(ABC):
         """Run the analysis."""
         ...
 
-
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
-def postprocess(config_or_args, n_iter: int = None, iter_n: int = None, path: str = None):
-    """Run all registered post-processing analyses.
-
-    Can be called two ways:
-      - From CLI:        postprocess(config, n_iter=50)
-      - From simulation: postprocess(sim_args_dict, n_iter=50, path="/path/to/run")
-    """
-
+def postprocess(config_or_args, n_iter=None, iter_n=None, path=None):
     if isinstance(config_or_args, AnalysisConfig):
         config = config_or_args
     else:
         config = AnalysisConfig(config_or_args, path)
 
+    processors = []
     for key in config.analyses:
-
         module_name = getattr(config, key).path.replace(".py", "")
         class_name = getattr(config, key).object
-
         mod = importlib.import_module(module_name)
-
         cls = getattr(mod, class_name)
         processor = cls(config, path, n_iter=n_iter, iter_n=iter_n)
-        processor.execute()
+        processors.append(processor)
+
+    # For local runs, still just call execute() sequentially (or could parallelise too)
+    # For Slurm, submit all first then wait on all
+    local = any(p._get_resource("local") for p in processors)
+
+    if local:
+        for p in processors:
+            p.execute()
+    else:
+        # Submit all analyses concurrently
+        all_jobs = []
+        for p in processors:
+            p._execute_helper()  # create output dirs first
+            all_jobs.extend(p._submit_jobs())
+        
+        # Now wait on everything
+        for job in all_jobs:
+            job.result()
 
 
 # ── CLI helpers ───────────────────────────────────────────────────────────────

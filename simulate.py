@@ -333,7 +333,7 @@ def run(yaml_path, local, n_workers, overrides=None):
         executor.update_parameters(
             mem=int(args["gb"] * 1.8 * 1024),
             time=ibdne_timeout,
-            cpus_per_task=args["nthreads"],
+            cpus_per_task=args.get("workers", args.get("nthreads", 1)),
             additional_parameters={}
         )
 
