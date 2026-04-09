@@ -133,6 +133,81 @@ def _read_node_file(ibd_path, label):
     return None
 
 
+# --- Public helpers for node resolution ---
+
+def _normalize_filtering(filtering):
+    """Normalize a filtering value to one of: 'none', 'related', 'unrelated'."""
+    if filtering == "null" or filtering == "" or filtering is None:
+        return "none"
+    if filtering not in ("none", "related", "unrelated"):
+        raise ValueError(f"Unknown filtering mode: {filtering!r}")
+    return filtering
+
+
+def _filtering_to_label(filtering):
+    """Map a normalized filtering mode to the cached file label."""
+    return "random" if filtering == "none" else filtering
+
+
+def get_node_file_path(ibd_path, filtering):
+    """Return the path to the cached node file for a given filtering mode.
+
+    e.g. /path/to/iter1.ibd.gz + "unrelated" -> /path/to/iter1_unrelated.txt
+    """
+    filtering = _normalize_filtering(filtering)
+    label = _filtering_to_label(filtering)
+    return _node_file_path(ibd_path, label)
+
+
+def get_nodes(ibd_path, n_samples, filtering):
+    """Return the set of node IDs for a given filtering mode.
+
+    Uses cached node files if available, otherwise computes and caches them.
+    This is the same node-resolution logic used by filter_ibd(), exposed
+    separately so callers can get just the nodes without filtering the IBD file.
+    """
+    filtering = _normalize_filtering(filtering)
+    label = _filtering_to_label(filtering)
+
+    nodes = _read_node_file(ibd_path, label)
+
+    if nodes is not None:
+        print(f"Loaded {len(nodes)} {label} nodes from cache.")
+        return nodes
+
+    print(f"No cached node file found for '{label}', computing fresh.")
+    all_nodes = {f"tsk_{i}" for i in range(n_samples)}
+    target = n_samples // 10
+
+    if filtering == "none":
+        nodes = set(np.random.choice(list(all_nodes), target, replace=False))
+
+    else:
+        ibd_df_full = pd.read_csv(ibd_path, sep="\s+", header=None)
+        kinship_obj = Kinship(os.path.dirname(ibd_path))
+
+        rows = []
+        for pair, pair_df in ibd_df_full.groupby([0, 2]):
+            if pair_df[7].sum() > 10:
+                rows.append([*pair, pair_df[7].sum()])
+
+        kinship = pd.DataFrame(rows, columns=["node1", "node2", "k"]).sort_values("k", ascending=False)
+        kinship["related"] = kinship["k"].apply(kinship_obj.assign_related)
+        related = kinship[kinship.related]
+
+        if filtering == "related":
+            nodes = subset_close(related, all_nodes, target=target)
+
+        elif filtering == "unrelated":
+            g = nx.Graph()
+            g.add_nodes_from(list(all_nodes))
+            g.add_edges_from(related[["node1", "node2"]].values)
+            nodes = set(prune_relatives(g, target=target))
+
+    _write_node_file(nodes, ibd_path, label)
+    return nodes
+
+
 # --- Main public functions ---
 
 def write_samples(ibd_path, n_samples):
@@ -173,51 +248,8 @@ def write_samples(ibd_path, n_samples):
 
 def filter_ibd(ibd_path, n_samples, output, filtering="none"):
 
-    # Normalise filtering value for backward compatibility
-    if filtering == "null" or filtering == "" or filtering is None:
-        filtering = "none"
-
-    if filtering not in ("none", "related", "unrelated"):
-        raise ValueError(f"Unknown filtering mode: {filtering!r}")
-
-    label = "random" if filtering == "none" else filtering
-
-    # Try to load cached node file first
-    nodes = _read_node_file(ibd_path, label)
-
-    if nodes is not None:
-        print(f"Loaded {len(nodes)} {label} nodes from cache.")
-    else:
-        print(f"No cached node file found for '{label}', computing fresh.")
-        all_nodes = {f"tsk_{i}" for i in range(n_samples)}
-        target = n_samples // 10
-
-        if filtering == "none":
-            nodes = set(np.random.choice(list(all_nodes), target, replace=False))
-
-        else:
-            ibd_df_full = pd.read_csv(ibd_path, sep="\s+", header=None)
-            kinship_obj = Kinship(os.path.dirname(ibd_path))
-
-            rows = []
-            for pair, pair_df in ibd_df_full.groupby([0, 2]):
-                if pair_df[7].sum() > 10:
-                    rows.append([*pair, pair_df[7].sum()])
-
-            kinship = pd.DataFrame(rows, columns=["node1", "node2", "k"]).sort_values("k", ascending=False)
-            kinship["related"] = kinship["k"].apply(kinship_obj.assign_related)
-            related = kinship[kinship.related]
-
-            if filtering == "related":
-                nodes = subset_close(related, all_nodes, target=target)
-
-            elif filtering == "unrelated":
-                g = nx.Graph()
-                g.add_nodes_from(list(all_nodes))
-                g.add_edges_from(related[["node1", "node2"]].values)
-                nodes = set(prune_relatives(g, target=target))
-
-        _write_node_file(nodes, ibd_path, label)
+    filtering = _normalize_filtering(filtering)
+    nodes = get_nodes(ibd_path, n_samples, filtering)
 
     ibd_df = pd.read_csv(ibd_path, sep="\s+", header=None)
     ibd_df = ibd_df[ibd_df.apply(lambda x: x[0] in nodes and x[2] in nodes, axis=1)]

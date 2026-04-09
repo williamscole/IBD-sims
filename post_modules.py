@@ -10,7 +10,7 @@ from configparser import ConfigParser
 
 from post_process import PostProcessor
 from simulations import load_config
-from filter_ibd import filter_ibd
+from filter_ibd import filter_ibd, get_nodes, get_node_file_path
 from purple import readin_ibd
 
 
@@ -112,18 +112,11 @@ class PostProcessIBDNe(PostProcessor):
         finally:
             os.remove(tmp_path)
 
-class PostProcessHapNeLD:
 
-    sub_config_key = "hapne_ld"
+def _needs_filtering(filtering):
+    """Return True if the filtering value indicates actual sample subsetting."""
+    return filtering is not None and filtering not in ("null", "", "none", "unfiltered")
 
-    def _tmp_map(self, input_map):
-        pass
-
-    def _single_iter(self, iter_n):
-
-        prefix = f"{self.path}/iter{iter_n}"
-
-        map_file = hapne_tmp_map(f"{prefix}.map")
 
 class PostProcessHapNeLD(PostProcessor):
     sub_config_key = "hapne_ld"
@@ -148,13 +141,28 @@ class PostProcessHapNeLD(PostProcessor):
         iter_out_dir = os.path.join(self.out_dir, f"iter{iter_n}")
         os.makedirs(iter_out_dir, exist_ok=True)
 
+        filtering = getattr(cfg, "filter", None)
+
+        # Resolve keep file: use the cached iter{i}_{label}.txt node file
+        # (one ID per row), which is exactly the format HapNe expects.
+        keep_file = None
+        if _needs_filtering(filtering):
+            ibd_path = f"{prefix}.ibd.gz"
+            # Ensure the node file exists (computes + caches if needed)
+            get_nodes(ibd_path, self.config.samples, filtering)
+            keep_file = get_node_file_path(ibd_path, filtering)
+            print(f"[HapNe-LD] using keep file: {keep_file}")
+
+        population_name = filtering if _needs_filtering(filtering) else "unfiltered"
+
         run_hapne_ld(
             vcf_file=prefix,
             input_map=f"{prefix}.map",
             output_folder=iter_out_dir,
-            population_name=getattr(cfg, "filter", "unfiltered"),
+            population_name=population_name,
             end_chr=self.config.end_chr,
-            workers=self._get_resource("workers")
+            workers=self._get_resource("workers"),
+            keep_file=keep_file,
         )
 
 
@@ -178,11 +186,42 @@ class PostProcessHapNeIBD(PostProcessor):
         iter_out_dir = os.path.join(self.out_dir, f"iter{iter_n}")
         os.makedirs(iter_out_dir, exist_ok=True)
 
-        run_hapne_ibd(
-            ibd_file=f"{prefix}.ibd.gz",
-            input_map=f"{prefix}.map",
-            output_folder=iter_out_dir,
-            population_name=getattr(cfg, "filter", "unfiltered"),
-            nb_samples=self.config.samples,
-            end_chr=self.config.end_chr,
-        )
+        filtering = getattr(cfg, "filter", None)
+        population_name = filtering if _needs_filtering(filtering) else "unfiltered"
+
+        if _needs_filtering(filtering):
+            # Filter IBD segments to a tmp file, then pass to HapNe-IBD
+            tmp_dir = tempfile.mkdtemp(prefix="hapne_ibd_")
+            tmp_ibd = os.path.join(tmp_dir, f"iter{iter_n}.ibd")
+
+            try:
+                filter_ibd(
+                    f"{prefix}.ibd.gz",
+                    self.config.samples,
+                    tmp_ibd,
+                    filtering,
+                )
+
+                # nb_samples for HapNe-IBD must reflect the filtered count
+                nodes = get_nodes(f"{prefix}.ibd.gz", self.config.samples, filtering)
+                nb_samples = len(nodes)
+
+                run_hapne_ibd(
+                    ibd_file=tmp_ibd,
+                    input_map=f"{prefix}.map",
+                    output_folder=iter_out_dir,
+                    population_name=population_name,
+                    nb_samples=nb_samples,
+                    end_chr=self.config.end_chr,
+                )
+            finally:
+                shutil.rmtree(tmp_dir)
+        else:
+            run_hapne_ibd(
+                ibd_file=f"{prefix}.ibd.gz",
+                input_map=f"{prefix}.map",
+                output_folder=iter_out_dir,
+                population_name=population_name,
+                nb_samples=self.config.samples,
+                end_chr=self.config.end_chr,
+            )
