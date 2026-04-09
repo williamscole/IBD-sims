@@ -154,8 +154,35 @@ class PostProcessHapNeLD(PostProcessor):
             output_folder=iter_out_dir,
             population_name=getattr(cfg, "filter", "unfiltered"),
             end_chr=self.config.end_chr,
-            workers=cfg.nthreads
+            workers=self._get_resource("workers")
         )
 
 
+class PostProcessHapNeIBD(PostProcessor):
+    sub_config_key = "hapne_ibd"
+    resource_fields = ["local", "workers", "mem_gb", "time_min"]
 
+    def execute(self):
+        self._execute_helper()
+
+        if self.single_iter:
+            self._single_iter(self.iter_n)
+        else:
+            self._execute_loop()
+
+    def _single_iter(self, iter_n: int):
+        from run_hapne import run_hapne_ibd
+
+        cfg = self._get_sub_config()
+        prefix = f"{self.path}/iter{iter_n}"
+        iter_out_dir = os.path.join(self.out_dir, f"iter{iter_n}")
+        os.makedirs(iter_out_dir, exist_ok=True)
+
+        run_hapne_ibd(
+            ibd_file=f"{prefix}.ibd.gz",
+            input_map=f"{prefix}.map",
+            output_folder=iter_out_dir,
+            population_name=getattr(cfg, "filter", "unfiltered"),
+            nb_samples=self.config.samples,
+            end_chr=self.config.end_chr,
+        )
