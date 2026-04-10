@@ -23,25 +23,25 @@ class PostProcessTest(PostProcessor):
         with open(Path(self.out_dir) / f"iter{iter_n}.txt", "w") as f:
             f.write(time.ctime())
 
-    def execute(self):
+    def execute(self, wait=True):
         self._execute_helper()
 
         if self.single_iter:
             self._single_iter(self.iter_n)
         else:
-            self._execute_loop()
+            self._execute_loop(wait=wait)
 
 
 class PostProcessPurple(PostProcessor):
     sub_config_key = "purple_nodes"
 
-    def execute(self):
+    def execute(self, wait=True):
         self._execute_helper()
 
         if self.single_iter:
             self._single_iter(self.iter_n)
         else:
-            self._execute_loop()
+            self._execute_loop(wait=wait)
 
     def _single_iter(self, iter_n):
         end_chr = self.config.end_chr
@@ -62,13 +62,13 @@ class PostProcessPurple(PostProcessor):
 class PostProcessIBDNe(PostProcessor):
     sub_config_key = "ibdne"
 
-    def execute(self):
+    def execute(self, wait=True):
         self._execute_helper()
 
         if self.single_iter:
             self._single_iter(self.iter_n)
         else:
-            self._execute_loop()
+            self._execute_loop(wait=wait)
 
     def _single_iter(self, iter_n):
         cfg = self._get_sub_config()
@@ -135,13 +135,13 @@ class PostProcessHapNeLD(PostProcessor):
     sub_config_key = "hapne_ld"
     resource_fields = ["local", "workers", "mem_gb", "time_min"]
 
-    def execute(self):
+    def execute(self, wait=True):
         self._execute_helper()
 
         if self.single_iter:
             self._single_iter(self.iter_n)
         else:
-            self._execute_loop()
+            self._execute_loop(wait=wait)
 
     def _tmp_map(self, input_map: str) -> tuple[str, str]:
         return hapne_tmp_map(input_map)
@@ -182,13 +182,13 @@ class PostProcessHapNeIBD(PostProcessor):
     sub_config_key = "hapne_ibd"
     resource_fields = ["local", "workers", "mem_gb", "time_min"]
 
-    def execute(self):
+    def execute(self, wait=True):
         self._execute_helper()
 
         if self.single_iter:
             self._single_iter(self.iter_n)
         else:
-            self._execute_loop()
+            self._execute_loop(wait=wait)
 
     def _single_iter(self, iter_n: int):
         from run_hapne import run_hapne_ibd
