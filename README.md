@@ -49,7 +49,7 @@ hapmap_chr1: /path/to/genetic_map_GRCh37_chr1.txt.gz
 
 ## HapNe patches
 
-The version of HapNe used here requires two small patches to work correctly with recent NumPy versions. After installing HapNe, apply them with `sed` (adjust the path to match your conda environment):
+The version of HapNe used here (commit `6bdac20`) requires two small patches to work correctly with recent NumPy versions. After installing HapNe, apply them with `sed` (adjust the path to match your conda environment):
 
 ```bash
 # Fix scalar assignment in DemographicHistory.py
