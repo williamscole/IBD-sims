@@ -13,7 +13,7 @@ ibdne_jar: /users/cwilli50/ibdne.23Apr20.ae9.jar
 # Path to genetic map for chromosome 1 (GRCh37)
 # Other chromosomes are loaded by replacing "chr1" with "chr{n}"
 # Expected format: HapMap format with a "Map(cM)" column
-genetic_map_chr1: /users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr1.txt.gz
+hapmap_chr1: /users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr1.txt.gz
 
 # Path to Quebec tree sequence file for chromosome 1 (only needed for arg7.yaml)
 # Other chromosomes are loaded by replacing "chr1" with "chr{n}"

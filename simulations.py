@@ -52,9 +52,9 @@ class GenomeSetup:
             sequence_length = 50_000_000
             rate = 1e-8
 
-        elif args["end_chr"] == 22:
-            rate = msprime.RateMap.read_hapmap(args["hapmap_chr1"].replace("chr1", f"chr{chrom}"))
-            sequence_length = int(rate.position[-1])
+       elif args["end_chr"] == 22:
+            hapmap = args.get("hapmap_chr1") or load_config()["hapmap_chr1"]
+            rate = msprime.RateMap.read_hapmap(hapmap.replace("chr1", f"chr{chrom}"))
 
         return sequence_length, rate
 
