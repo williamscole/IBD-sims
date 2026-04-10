@@ -1,1 +1,5 @@
 archive/
+analysis_tools.py
+kinship.py
+msprime_scripts.py
+single_sim.sh
