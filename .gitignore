@@ -3,3 +3,4 @@ analysis_tools.py
 kinship.py
 msprime_scripts.py
 *.sh
+*.ipynb
