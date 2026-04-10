@@ -189,7 +189,7 @@ def get_nodes(ibd_path, n_samples, filtering):
         nodes = set(np.random.choice(list(all_nodes), target, replace=False))
 
     else:
-        ibd_df_full = pd.read_csv(ibd_path, sep="\s+", header=None)
+        ibd_df_full = pd.read_csv(ibd_path, sep="\\s+", header=None)
         kinship_obj = Kinship(os.path.dirname(ibd_path))
 
         rows = []
@@ -258,13 +258,13 @@ def filter_ibd(ibd_path, n_samples, output, filtering="none"):
 
     if filtering == "none":
         # No filtering — copy the IBD file as-is
-        ibd_df = pd.read_csv(ibd_path, sep="\s+", header=None)
+        ibd_df = pd.read_csv(ibd_path, sep="\\s+", header=None)
         ibd_df.to_csv(output, sep=" ", header=False, index=False)
         return
 
     nodes = get_nodes(ibd_path, n_samples, filtering)
 
-    ibd_df = pd.read_csv(ibd_path, sep="\s+", header=None)
+    ibd_df = pd.read_csv(ibd_path, sep="\\s+", header=None)
     ibd_df = ibd_df[ibd_df.apply(lambda x: x[0] in nodes and x[2] in nodes, axis=1)]
     ibd_df.to_csv(output, sep=" ", header=False, index=False)
 
