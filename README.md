@@ -6,9 +6,9 @@ Ancestry is simulated with [msprime](https://tskit.dev/msprime/docs/stable/intro
 
 ## Requirements
 
-**Python packages:** msprime, numpy, pandas, matplotlib, seaborn, PyYAML, submitit, stdpopsim
+**Python packages:** msprime, numpy, pandas, matplotlib, seaborn, PyYAML, submitit, stdpopsim, hapne
 
-**External tools (must be on `$PATH` or configured in `setup.yaml`):**
+**External tools (must be configured in `setup.yaml`):**
 
 - [hap-ibd](https://github.com/browning-lab/hap-ibd) — IBD segment detection (Java jar)
 - [IBDNe](https://faculty.washington.edu/browning/ibdne.html) — Ne inference from IBD (Java jar)
@@ -27,6 +27,28 @@ hapmap_chr1: /path/to/genetic_map_GRCh37_chr1.txt.gz
 ```
 
 `hapmap_chr1` is only needed when `end_chr: 22` (real autosomes). For simulated chromosomes (`end_chr: 30`) it is ignored.
+
+## HapNe patches
+
+The version of HapNe used here requires two small patches to work correctly with recent NumPy versions. After installing HapNe, apply them with `sed` (adjust the path to match your conda environment):
+
+```bash
+# Fix scalar assignment in DemographicHistory.py
+sed -i 's/times\[ii + 1\] = t_quantile/times[ii + 1] = np.asarray(t_quantile).item()/' \
+  /path/to/envs/ibd-sims/lib/python3.12/site-packages/hapne/backend/DemographicHistory.py
+
+# Fix array ravel in utils.py
+sed -i 's/n = n.ravel()/n = np.asarray(n).ravel()/' \
+  /path/to/envs/ibd-sims/lib/python3.12/site-packages/hapne/utils.py
+```
+
+Replace `/path/to/envs/ibd-sims` with the actual path to your conda environment (e.g. `~/.conda/envs/ibd-sims`). You can find it with:
+
+```bash
+conda env list
+```
+
+These patches are only needed if you intend to run HapNe-IBD or HapNe-LD post-processing. They have no effect on IBDNe or the simulation itself.
 
 ## Quick start
 
@@ -93,6 +115,23 @@ python post_process.py path/to/run/ --set local=false
 
 Post-processing output goes into numbered subdirectories (e.g., `ibdne/001/`, `ibdne/002/`). If you re-run with the same analysis parameters, it overwrites the matching directory. If you change parameters, it creates a new one. Each subdirectory contains an `args.yaml` recording exactly which parameters were used for that run.
 
+### Phase 3: Plotting
+
+`plot.py` plots Ne estimates from one or more post-processing runs against the true demographic history. You specify which numbered subdirectories to include for each tool:
+
+```bash
+# Plot IBDNe runs 001 and 003, and HapNe-IBD run 001
+python plot.py path/to/run --ibdne 001 003 --hapne_ibd 001
+
+# Plot HapNe-LD only
+python plot.py path/to/run --hapne_ld 001 002
+
+# Suppress the log2-Ne vertical reference lines
+python plot.py path/to/run --ibdne 001 --no-vlines
+```
+
+Line labels are built automatically from each subdirectory's `args.yaml` (demographic model, sample size, mating model, filter). Lines are colour-coded by tool — greens for IBDNe, oranges/reds for HapNe-IBD, blue-purples for HapNe-LD — with dash styles cycling within each tool. When more than 10 replicates are present, a 5th–95th percentile band is shown. Output is saved to `{path}/Ne_plot.png`.
+
 ## YAML configuration
 
 Each simulation is configured via a YAML file with two sections: simulation parameters at the top level, and post-processing module blocks below.
@@ -133,12 +172,20 @@ pedigree:
 
 ### Post-processing parameters
 
-Set `post_process` to a comma-separated list of modules to run, or `null` to skip all post-processing. Each module has its own nested config block with `object` (Python class name), `path` (Python file), analysis parameters, and optional resource overrides.
+Set `post_process` to a comma-separated list of modules to run, or `null` to skip all post-processing.
+
+To run post-processing, edit the file or use `--set`:
+
+```bash
+python simulate.py yaml_files/arg1.yaml --set post_process=ibdne
+```
+
+Each module has its own nested config block with `object` (Python class name), `path` (Python file), analysis parameters, and optional resource overrides.
 
 Resource fields (`workers`, `mem_gb`, `time_min`) can be set at the top level as defaults and overridden per module:
 
 ```yaml
-post_process: ibdne,purple_nodes  # null to skip; options: ibdne,hapne_ibd,hapne_ld,purple_nodes
+post_process: ibdne,hapne_ibd,hapne_ld,purple_nodes  # null to skip
 
 # Default resources for all post-processing jobs
 workers: 8
@@ -148,7 +195,7 @@ time_min: 120
 ibdne:
   object: PostProcessIBDNe
   path: post_modules.py
-  ibd_filter: null
+  filter: unfiltered        # sample filtering: unfiltered, related, unrelated, random
   filtersamples: false
   mincm: 2
   trimcm: 0.2
@@ -157,14 +204,14 @@ ibdne:
   nboots: 80
   nits: 1000
   npairs: 0
-  workers: 8       # module-level override
+  workers: 8
   mem_gb: 16
   time_min: 120
 
 hapne_ibd:
   object: PostProcessHapNeIBD
   path: post_modules.py
-  filter: unfiltered
+  filter: unfiltered        # sample filtering: unfiltered, related, unrelated, random
   workers: 4
   mem_gb: 16
   time_min: 120
@@ -185,28 +232,6 @@ purple_nodes:
   time_min: 60
 ```
 
-## Example configurations
-
-Ready-to-run configurations are provided in `yaml_files/`:
-
-| File | Demographic model | Samples | Mating | Pedigree gens | Replicates |
-|------|-------------------|---------|--------|---------------|------------|
-| `debug.yaml` | Constant Ne (10k) | 1,000 | coalescent | — | 1 |
-| `arg1.yaml` | Constant Ne (10k) | 1,000 | Random | 25 | 50 |
-| `arg2.yaml` | Constant Ne (10k) | 1,000 | Monogamous | 25 | 50 |
-| `arg3.yaml` | Constant Ne (100k) | 1,000 | Random | 25 | 50 |
-| `arg4.yaml` | Constant Ne (100k) | 1,000 | Monogamous | 25 | 50 |
-| `arg5.yaml` | Out-of-Africa (2-pop) | 2,000 | Random | 25 | 50 |
-| `arg6.yaml` | Out-of-Africa (2-pop) | 2,000 | Monogamous | 25 | 50 |
-| `arg7.yaml` | Quebec (empirical) | 10,000 | — | — | 1 |
-| `arg8.yaml` | Ashkenazi | 1,000 | Random | 12 | 50 |
-
-All configs have `post_process: null` by default. To run post-processing, edit the file or use `--set`:
-
-```bash
-python simulate.py yaml_files/arg1.yaml --set post_process=ibdne
-```
-
 ## Output structure
 
 ```
@@ -223,14 +248,47 @@ run_directory/
 │   └── 002/                  # re-run with different parameters
 │       ├── args.yaml
 │       └── ...
+├── hapne_ibd/
+│   └── 001/
+│       ├── args.yaml
+│       ├── iter1/
+│       │   └── HapNe/
+│       │       └── hapne.csv
+│       └── ...
+├── hapne_ld/
+│   └── 001/
+│       ├── args.yaml
+│       ├── iter1/
+│       │   └── HapNe/
+│       │       └── hapne.csv
+│       └── ...
 ├── purple_nodes/
 │   └── 001/
 │       ├── args.yaml
 │       ├── iter1.npy
 │       └── ...
+├── Ne_plot.png               # output of plot.py
 ├── slurm/                    # Slurm/submitit logs
 └── errors/                   # error logs
 ```
+
+## Example configurations
+
+Ready-to-run configurations are provided in `yaml_files/`:
+
+| File | Demographic model | Samples | Mating | Pedigree gens | Replicates |
+|------|-------------------|---------|--------|---------------|------------|
+| `debug.yaml` | Constant Ne (10k) | 1,000 | coalescent | — | 1 |
+| `arg1.yaml` | Constant Ne (10k) | 1,000 | Random | 25 | 50 |
+| `arg2.yaml` | Constant Ne (10k) | 1,000 | Monogamous | 25 | 50 |
+| `arg3.yaml` | Constant Ne (100k) | 1,000 | Random | 25 | 50 |
+| `arg4.yaml` | Constant Ne (100k) | 1,000 | Monogamous | 25 | 50 |
+| `arg5.yaml` | Out-of-Africa (2-pop) | 2,000 | Random | 25 | 50 |
+| `arg6.yaml` | Out-of-Africa (2-pop) | 2,000 | Monogamous | 25 | 50 |
+| `arg7.yaml` | Quebec (empirical) | 10,000 | — | — | 1 |
+| `arg8.yaml` | Ashkenazi | 1,000 | Random | 12 | 50 |
+
+All configs have `post_process: null` by default.
 
 ## Adding a new demographic model
 
@@ -256,12 +314,12 @@ class MyAnalysis(PostProcessor):
     sub_config_key = "my_analysis"
     resource_fields = ["local", "workers", "mem_gb", "time_min"]
 
-    def execute(self):
+    def execute(self, wait=True):
         self._execute_helper()
         if self.single_iter:
             self._single_iter(self.iter_n)
         else:
-            self._execute_loop()
+            self._execute_loop(wait=wait)
 
     def _single_iter(self, iter_n):
         cfg = self._get_sub_config()
@@ -314,13 +372,13 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 | `simulations.py` | Core simulation logic (msprime, VCF, hap-ibd, TMRCA) |
 | `post_process.py` | Post-processing orchestrator — entry point for Phase 2, `PostProcessor` ABC |
 | `post_modules.py` | Built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes |
+| `plot.py` | Plot IBDNe / HapNe-IBD / HapNe-LD Ne estimates vs true Ne |
 | `demography.py` | Demographic model definitions |
 | `wf_pedigree.py` | Wright-Fisher pedigree generation |
 | `write_vcf.py` | VCF and genetic map output with realistic SNP thinning |
 | `maf_buckets.py` | Build SNP density/MAF pickle from plink files |
 | `run_hapne.py` | HapNe-IBD and HapNe-LD runner utilities |
-| `plot.py` | Plot IBDNe estimates vs true Ne |
-| `filter_ibd.py` | IBD filtering (related/unrelated subsets) |
+| `filter_ibd.py` | IBD filtering (related/unrelated/random subsets) |
 | `purple.py` | Purple node matrix computation |
 | `concat_tmrca.py` | Concatenate per-chromosome TMRCA files |
 | `kinship.py` | Kinship degree classification from IBD |
