@@ -136,17 +136,16 @@ def _read_node_file(ibd_path, label):
 # --- Public helpers for node resolution ---
 
 def _normalize_filtering(filtering):
-    """Normalize a filtering value to one of: 'none', 'related', 'unrelated'."""
+    """Normalize a filtering value to one of: 'none', 'random', 'related', 'unrelated'.
+
+    'none' (or null/None/"") means no filtering — all samples are kept.
+    'random' means randomly subsample to n_samples // 10.
+    """
     if filtering == "null" or filtering == "" or filtering is None:
         return "none"
-    if filtering not in ("none", "related", "unrelated"):
+    if filtering not in ("none", "random", "related", "unrelated"):
         raise ValueError(f"Unknown filtering mode: {filtering!r}")
     return filtering
-
-
-def _filtering_to_label(filtering):
-    """Map a normalized filtering mode to the cached file label."""
-    return "random" if filtering == "none" else filtering
 
 
 def get_node_file_path(ibd_path, filtering):
@@ -155,31 +154,39 @@ def get_node_file_path(ibd_path, filtering):
     e.g. /path/to/iter1.ibd.gz + "unrelated" -> /path/to/iter1_unrelated.txt
     """
     filtering = _normalize_filtering(filtering)
-    label = _filtering_to_label(filtering)
-    return _node_file_path(ibd_path, label)
+    return _node_file_path(ibd_path, filtering)
 
 
 def get_nodes(ibd_path, n_samples, filtering):
     """Return the set of node IDs for a given filtering mode.
 
-    Uses cached node files if available, otherwise computes and caches them.
-    This is the same node-resolution logic used by filter_ibd(), exposed
-    separately so callers can get just the nodes without filtering the IBD file.
+    Modes:
+      'none'       — return all n_samples nodes (no filtering at all)
+      'random'     — randomly subsample to n_samples // 10
+      'related'    — subset enriched for close relatives (n_samples // 10)
+      'unrelated'  — subset pruned of close relatives (n_samples // 10)
+
+    For 'random', 'related', 'unrelated': uses cached node files if available,
+    otherwise computes and caches them.
     """
     filtering = _normalize_filtering(filtering)
-    label = _filtering_to_label(filtering)
 
-    nodes = _read_node_file(ibd_path, label)
+    # No filtering — return everybody
+    if filtering == "none":
+        return {f"tsk_{i}" for i in range(n_samples)}
+
+    # For the subsetting modes, check cache first
+    nodes = _read_node_file(ibd_path, filtering)
 
     if nodes is not None:
-        print(f"Loaded {len(nodes)} {label} nodes from cache.")
+        print(f"Loaded {len(nodes)} {filtering} nodes from cache.")
         return nodes
 
-    print(f"No cached node file found for '{label}', computing fresh.")
+    print(f"No cached node file found for '{filtering}', computing fresh.")
     all_nodes = {f"tsk_{i}" for i in range(n_samples)}
     target = n_samples // 10
 
-    if filtering == "none":
+    if filtering == "random":
         nodes = set(np.random.choice(list(all_nodes), target, replace=False))
 
     else:
@@ -204,7 +211,7 @@ def get_nodes(ibd_path, n_samples, filtering):
             g.add_edges_from(related[["node1", "node2"]].values)
             nodes = set(prune_relatives(g, target=target))
 
-    _write_node_file(nodes, ibd_path, label)
+    _write_node_file(nodes, ibd_path, filtering)
     return nodes
 
 
@@ -249,6 +256,13 @@ def write_samples(ibd_path, n_samples):
 def filter_ibd(ibd_path, n_samples, output, filtering="none"):
 
     filtering = _normalize_filtering(filtering)
+
+    if filtering == "none":
+        # No filtering — copy the IBD file as-is
+        ibd_df = pd.read_csv(ibd_path, sep="\s+", header=None)
+        ibd_df.to_csv(output, sep=" ", header=False, index=False)
+        return
+
     nodes = get_nodes(ibd_path, n_samples, filtering)
 
     ibd_df = pd.read_csv(ibd_path, sep="\s+", header=None)
