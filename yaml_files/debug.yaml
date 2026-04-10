@@ -45,7 +45,7 @@ mem_gb: 16
 time_min: 120
 
 ibdne:
-  path: ibd_sims/post_modules.py
+  path: post_modules.py
   object: PostProcessIBDNe
   ibd_filter: null
   filtersamples: false
@@ -61,7 +61,7 @@ ibdne:
   time_min: 10
 
 hapne_ibd:
-  path: ibd_sims/post_modules.py
+  path: post_modules.py
   object: PostProcessHapNeIBD
   filter: unfiltered
   workers: 4
@@ -69,7 +69,7 @@ hapne_ibd:
   time_min: 120
 
 hapne_ld:
-  path: ibd_sims/post_modules.py
+  path: post_modules.py
   object: PostProcessHapNeLD
   filter: unfiltered
   workers: 4
@@ -77,7 +77,7 @@ hapne_ld:
   time_min: 120
 
 purple_nodes:
-  path: ibd_sims/post_modules.py
+  path: post_modules.py
   object: PostProcessPurple
   workers: 4
   mem_gb: 8
