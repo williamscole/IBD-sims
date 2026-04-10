@@ -135,11 +135,61 @@ def run_pedigree(path, iter_n):
 
 def run_simulation(path, iter_n, chrom):
     """Phase 2: simulate one (iteration, chromosome) pair."""
-    args = load_args(path)
-    args["seed"] = base_seed(path, iter_n)
-    args["iter_n"] = iter_n
-    sim(args, chrom, path)
+    sim(path, iter_n, chrom)
 
+def concat_ibd_files(prefix, end_chr, hbd: bool = False):
+    ext = "hbd" if hbd else "ibd"
+    ibd_file = f"{prefix}.{ext}"
+    if not os.path.exists(f"{ibd_file}.gz"):
+        with open(ibd_file, "w") as out:
+            for chrom in range(1, end_chr + 1):
+                chr_file = f"{prefix}_chr{chrom}.{ext}.gz"
+                result = subprocess.run(["zcat", chr_file], capture_output=True, text=True)
+                for line in result.stdout.splitlines():
+                    parts = line.split()
+                    parts[4] = str(chrom)
+                    out.write(" ".join(parts) + "\n")
+        subprocess.run(["gzip", ibd_file], check=True)
+
+def remove_ibd_chr_files(prefix, end_chr, hbd: bool = False):
+    ext = "hbd" if hbd else "ibd"
+    for chrom in range(1, end_chr + 1):
+        chr_file = f"{prefix}_chr{chrom}.{ext}.gz"
+        if os.path.exists(chr_file):
+            os.remove(chr_file)
+
+def concat_vcf(prefix, end_chr):
+    vcf_file = f"{prefix}.vcf.gz"
+    chr_files = [f"{prefix}_chr{chrom}.vcf.gz" for chrom in range(1, end_chr + 1)]
+    if not os.path.exists(vcf_file) and all(os.path.exists(f) for f in chr_files):
+        subprocess.run(
+            ["bcftools", "concat"] + chr_files + ["-Oz", "-o", vcf_file],
+            check=True
+        )
+
+def remove_vcf_chr_files(prefix, end_chr):
+    for chrom in range(1, end_chr + 1):
+        chr_file = f"{prefix}_chr{chrom}.vcf.gz"
+        if os.path.exists(chr_file):
+            os.remove(chr_file)
+
+def concat_map_files(prefix, end_chr):
+    map_file = f"{prefix}.map"
+    if not os.path.exists(map_file):
+        with open(map_file, "w") as out:
+            for chrom in range(1, end_chr + 1):
+                chr_map = f"{prefix}_chr{chrom}.map"
+                with open(chr_map) as f:
+                    for line in f:
+                        parts = line.split()
+                        parts[0] = str(chrom)
+                        out.write(" ".join(parts) + "\n")
+
+def remove_map_chr_files(prefix, end_chr):
+    for chrom in range(1, end_chr + 1):
+        chr_map = f"{prefix}_chr{chrom}.map"
+        if os.path.exists(chr_map):
+            os.remove(chr_map)
 
 def run_post_processing(path, iter_n):
     """Phase 3: concatenate outputs and run post-processing"""
