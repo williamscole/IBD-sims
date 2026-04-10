@@ -1,40 +1,84 @@
+# Constant Ne (10k) | n=1000 | Monogamous mating | 25 pedigree gens | 50 replicates
+
+# ── Housekeeping ──────────────────────────────────────────────────────────────
+base_dir: ibd_sims
+dir_name: ibd-sims
+keep_all_files: false
+
+# ── Computational resources (simulation) ─────────────────────────────────────
+gb: 6
+sim_min: 30
+nthreads: 8
+
+# ── Simulation ────────────────────────────────────────────────────────────────
+hapmap_chr1: /users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr1.txt.gz
+
 custom_demo:
   object: constant_Ne
   path: demography.py
+
 custom_sim:
   object: null
   path: null
-dir_name: unfiltered_ibdne
+
 end_chr: 30
-filtersamples: false
-gb: 6
-gmax: 300
-gmin: 1
-hapmap_chr1: /users/cwilli50/reference/geneticMap-GRCh37/genetic_map_GRCh37_chr1.txt.gz
-ibd_filter: null
-ibdne: /users/cwilli50/ibdne.23Apr20.ae9.jar
-ibdne_time: --time=1:00:00
 iter: 50
-label: 'constant_Ne
-
-  n=1000
-
-  DTWF (mono)
-
-  unfiltered'
-mincm: 2
-nboots: 80
-nits: 1000
-npairs: 0
-nthreads: 8
-pedigree:
-  gen_end: 25
-  mating: mono
-  pedigree_mode: true
-post_process_only: false
-purple_nodes: true
-run_ibdne: true
 samples: 1000
-sim_time: --time=30:00
-simulate_only: false
-trimcm: 0.2
+
+pedigree:
+  pedigree_mode: true
+  mating: mono
+  gen_end: 25
+  pedigree_file: null
+
+label: 'constant_Ne
+  n=1000
+  DTWF (mono)
+  unfiltered'
+
+# ── Post-processing ───────────────────────────────────────────────────────────
+post_process: null  # ibdne,hapne_ibd,hapne_ld,purple_nodes
+
+# Default resources for post-processing jobs (override per module below)
+workers: 8
+mem_gb: 16
+time_min: 120
+
+ibdne:
+  path: post_modules.py
+  object: PostProcessIBDNe
+  ibd_filter: null
+  filtersamples: false
+  mincm: 2
+  trimcm: 0.2
+  gmin: 1
+  gmax: 300
+  nboots: 80
+  nits: 1000
+  npairs: 0
+  workers: 8
+  mem_gb: 16
+  time_min: 120
+
+hapne_ibd:
+  path: post_modules.py
+  object: PostProcessHapNeIBD
+  filter: unfiltered
+  workers: 4
+  mem_gb: 16
+  time_min: 120
+
+hapne_ld:
+  path: post_modules.py
+  object: PostProcessHapNeLD
+  filter: unfiltered
+  workers: 4
+  mem_gb: 16
+  time_min: 120
+
+purple_nodes:
+  path: post_modules.py
+  object: PostProcessPurple
+  workers: 4
+  mem_gb: 8
+  time_min: 60
