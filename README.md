@@ -91,7 +91,7 @@ python run.py simulate yaml_files/arg1.yaml
 python run.py simulate yaml_files/arg1.yaml --local --workers 8
 ```
 
-**Resume a previous run** by passing the output directory instead of a YAML file:
+**Resume a previous run (under development)** by passing the output directory instead of a YAML file:
 
 ```bash
 python run.py simulate path/to/existing/run/
