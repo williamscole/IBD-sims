@@ -1,0 +1,309 @@
+# IBD-sims — LLM Context File
+# Paste this into a language model when you need help running, debugging, or extending this pipeline.
+# Repository: https://github.com/williamscole/IBD-sims/
+
+## What this project is
+
+IBD-sims is a pipeline for simulating realistic Identity-By-Descent (IBD) segments under various demographic histories and mating models. Its primary purpose is evaluating IBDNe (a tool that infers effective population size, Ne, from IBD segments), but the simulated IBD data can feed any downstream analysis.
+
+The pipeline simulates ancestry with msprime, optionally prepending an explicit Wright-Fisher pedigree for recent generations (the DTWF model). Genotype data is generated, then IBD segments are detected from it using hap-ibd. Post-processing tools (IBDNe, HapNe-IBD) estimate Ne from the detected IBD, and plotting compares those estimates against the known truth.
+
+## How to get it running
+
+### Prerequisites
+- Conda (for environment management)
+- Java JRE 8+ (for hap-ibd and IBDNe jars)
+- bcftools (only if `keep_all_files: true`)
+- A Slurm cluster (optional; the pipeline can also run locally)
+
+### Setup steps (in order)
+
+1. Clone the repo:
+   git clone https://github.com/williamscole/IBD-sims.git
+   cd IBD-sims
+
+2. Create and activate the conda environment:
+   conda env create -f environment.yaml
+   conda activate ibd-sims
+
+3. Register the pipeline so Python can find the modules:
+   echo "$(cd ibd_sims && pwd)" > $(python -c "import site; print(site.getsitepackages()[0])")/ibd-sims.pth
+
+4. Edit setup.yaml (in the repo root) to point to your local paths:
+   - maf_pickle: path to SNP density pickle (ukb_snps.pkl is included in the repo)
+   - hap_ibd_jar: path to your hap-ibd.jar
+   - ibdne_jar: path to your ibdne.jar
+   - hapmap_chr1: path to genetic_map_GRCh37_chr1.txt.gz (only needed when end_chr=22)
+
+5. (Optional, only for HapNe-IBD/HapNe-LD) Apply NumPy compatibility patches:
+   sed -i 's/times\[ii + 1\] = t_quantile/times[ii + 1] = np.asarray(t_quantile).item()/' \
+     /path/to/envs/ibd-sims/lib/python3.12/site-packages/hapne/backend/DemographicHistory.py
+   sed -i 's/n = n.ravel()/n = np.asarray(n).ravel()/' \
+     /path/to/envs/ibd-sims/lib/python3.12/site-packages/hapne/utils.py
+
+### Quick smoke test
+   python run.py simulate yaml_files/debug.yaml --local
+
+## The three pipeline phases
+
+Everything goes through run.py, which has three subcommands: simulate, postprocess, plot.
+
+### Phase 1: simulate
+Produces IBD segments. For each replicate iteration, outputs are:
+- iter{n}.ibd.gz  — concatenated IBD segments (all chromosomes)
+- iter{n}.map     — concatenated genetic map
+- iter{n}.tmrca.gz — TMRCA annotations for each IBD segment
+
+Commands:
+   python run.py simulate yaml_files/arg1.yaml                    # Slurm (default)
+   python run.py simulate yaml_files/arg1.yaml --local --workers 8  # local
+   python run.py simulate yaml_files/arg1.yaml --set iter=5 --set pedigree.mating=mono  # override YAML params
+
+### Phase 2: postprocess
+Runs Ne inference on the simulation output. Can be re-run with different parameters without re-simulating.
+
+Commands:
+   python run.py postprocess path/to/run/
+   python run.py postprocess path/to/run/ --set ibdne.mincm=3 ibdne.nboots=100
+
+Post-processing output goes into numbered subdirectories (e.g., ibdne/001/, ibdne/002/).
+If you re-run with the same parameters, it overwrites the matching directory.
+If you change parameters, it creates a new numbered directory.
+Each subdirectory has its own args.yaml recording what parameters were used.
+
+### Phase 3: plot
+Plots Ne estimates against the true demographic history.
+
+Commands:
+   python run.py plot path/to/run/ --ibdne 001 003 --hapne_ibd 001
+   python run.py plot path/to/run/ --hapne_ld 001 002
+   python run.py plot path/to/run/ --ibdne 001 --no-vlines
+
+The arguments (001, 003, etc.) refer to the numbered subdirectories from post-processing.
+Output is saved to {path}/Ne_plot.png.
+
+## YAML configuration reference
+
+Each simulation is driven by a YAML config file. Here are all the parameters and what they do:
+
+### Simulation parameters
+
+base_dir: <string>        — Parent directory for output. null = current directory.
+dir_name: <string>        — Subdirectory name within the run directory.
+keep_all_files: <bool>    — If true, also retains VCF and HBD files (requires bcftools).
+gb: <int>                 — Memory (GB) for simulation Slurm jobs.
+sim_min: <int>            — Wall-time (minutes) for simulation Slurm jobs.
+nthreads: <int>           — Threads for hap-ibd.
+iter: <int>               — Number of independent replicate simulations.
+samples: <int>            — Number of diploid individuals to simulate.
+end_chr: <int>            — Chromosomes to simulate. 30 = thirty 100Mb simulated chromosomes.
+                            22 = real human autosomes (requires hapmap genetic maps).
+
+custom_demo:              — Demographic model specification.
+  path: <string>            Python file containing an msprime.Demography object.
+  object: <string>          Variable name in that file.
+
+custom_sim:               — Alternative: supply a custom tree-sequence loader instead.
+  path: <string>            Python file with a function that returns (ts, rate).
+  object: <string>          Function name.
+
+pedigree:                 — Mating model configuration.
+  pedigree_mode: <bool>     If true, simulate an explicit Wright-Fisher pedigree for recent generations.
+  mating: <string>          "di" = random mating, "mono" = monogamous mating.
+  gen_end: <int>            Number of pedigree generations before coalescent takeover.
+  pedigree_file: <string>   Path to pre-existing pedigree file (optional, null to generate one).
+
+label: <string>           — Multi-line label used to name the output directory.
+
+### Post-processing parameters
+
+post_process: <string>    — Comma-separated list of modules to run, or null to skip.
+                            Valid modules: ibdne, hapne_ibd, hapne_ld, purple_nodes
+
+# Default resources (can be overridden per module):
+workers: <int>
+mem_gb: <int>
+time_min: <int>
+
+# IBDNe-specific parameters:
+ibdne:
+  filter: <string>        — Sample filtering mode: unfiltered, related, unrelated, random
+  filtersamples: <bool>   — IBDNe's built-in sample filtering
+  mincm: <float>          — Minimum IBD segment length in cM (default 2)
+  trimcm: <float>         — Trim ends of segments by this many cM (default 0.2)
+  gmin: <int>             — Minimum generations ago (default 1)
+  gmax: <int>             — Maximum generations ago (default 300)
+  nboots: <int>           — Number of bootstrap replicates (default 80)
+  nits: <int>             — Number of iterations (default 1000)
+  npairs: <int>           — Number of pairs (0 = all)
+
+# HapNe-IBD parameters:
+hapne_ibd:
+  filter: <string>        — Same filtering modes as ibdne
+
+# HapNe-LD parameters (under development, may be slow/broken):
+hapne_ld:
+  filter: <string>
+
+## Available demographic models (in ibd_sims/demography.py)
+
+- constant_Ne      — Constant Ne of 10,000
+- constant_Ne100k  — Constant Ne of 100,000
+- euro_bottleneck  — European-like: bottleneck at 1,400 gen ago (Ne=2,100), exponential growth to 500k
+- himba            — Recent bottleneck: growth from Ne=1,000, contraction starting at gen 12
+- ooa2             — Two-population Out-of-Africa model (EUR + AFR, with migration)
+- ashkenazi        — Ashkenazi Jewish model via stdpopsim (AshkSub_7G19)
+- expon            — Exponential growth from Ne=1M, growth rate 0.0307, stabilizing at gen 150
+
+To add your own: define an msprime.Demography object in a .py file and reference it in the YAML:
+  custom_demo:
+    path: my_demography.py
+    object: my_model
+
+## Pre-built YAML configs (in yaml_files/)
+
+debug.yaml  — 1 replicate, coalescent only, constant Ne 10k. Use this to test your setup.
+arg1.yaml   — 50 replicates, random mating DTWF, constant Ne 10k, 1000 samples
+arg2.yaml   — 50 replicates, monogamous DTWF, constant Ne 10k, 1000 samples
+arg3.yaml   — 50 replicates, random mating DTWF, constant Ne 100k, 1000 samples
+arg4.yaml   — 50 replicates, monogamous DTWF, constant Ne 100k, 1000 samples
+arg5.yaml   — 50 replicates, random mating DTWF, Out-of-Africa 2-pop, 2000 samples
+arg6.yaml   — 50 replicates, monogamous DTWF, Out-of-Africa 2-pop, 2000 samples
+arg7.yaml   — 1 replicate, Quebec empirical tree sequences, 10000 samples
+arg8.yaml   — 50 replicates, random mating DTWF, Ashkenazi model, 1000 samples
+
+All configs have post_process: null by default (simulation only).
+
+## Output directory structure
+
+After simulation + post-processing, a run directory looks like:
+  run_directory/
+  ├── args.yaml                 # copy of the simulation config
+  ├── iter1.ibd.gz              # concatenated IBD segments
+  ├── iter1.map                 # concatenated genetic map
+  ├── iter1.tmrca.gz            # TMRCA annotations
+  ├── ibdne/
+  │   ├── 001/                  # first IBDNe run
+  │   │   ├── args.yaml         # parameters for this analysis run
+  │   │   ├── iter1.ne          # IBDNe output
+  │   │   └── ...
+  │   └── 002/                  # re-run with different parameters
+  ├── hapne_ibd/
+  │   └── 001/
+  │       └── iter1/HapNe/hapne.csv
+  ├── hapne_ld/
+  │   └── ...
+  ├── purple_nodes/
+  │   └── 001/
+  │       └── iter1.npy
+  ├── Ne_plot.png
+  ├── slurm/                    # Slurm log files
+  └── errors/                   # error logs
+
+## Repository file layout
+
+run.py                    — Single CLI entry point (simulate / postprocess / plot)
+setup.yaml                — Machine-specific paths (hap-ibd jar, IBDNe jar, etc.)
+environment.yaml          — Conda environment specification
+yaml_files/               — Pre-built simulation configs
+ibd_sims/
+  simulate.py             — Simulation orchestrator (Slurm or local dispatch)
+  simulations.py          — Core simulation logic (msprime, VCF writing, hap-ibd, TMRCA)
+  post_process.py         — Post-processing orchestrator and PostProcessor ABC
+  post_modules.py         — Built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes
+  plot_Ne.py              — Plotting Ne estimates vs truth
+  demography.py           — Demographic model definitions
+  wf_pedigree.py          — Wright-Fisher pedigree generation
+  write_vcf.py            — VCF output with realistic SNP thinning to match UKB density/MAF
+  maf_buckets.py          — Build SNP density/MAF pickle from plink files
+  run_hapne.py            — HapNe-IBD and HapNe-LD runner utilities
+  filter_ibd.py           — IBD sample filtering (related/unrelated/random subsets)
+  purple.py               — Purple node matrix computation
+  concat_tmrca.py         — Concatenate per-chromosome TMRCA files
+  utils.py                — CLI override utilities
+  yaml_tools.py           — Batch YAML generation helper
+
+## How simulation works internally (for debugging)
+
+For each replicate iteration and each chromosome:
+1. An msprime.Demography is loaded from the custom_demo Python file.
+2. If pedigree_mode is true, a Wright-Fisher pedigree is generated (wf_pedigree.py) covering
+   gen_end recent generations with the chosen mating model (random or monogamous). The pedigree
+   is written to iter{n}_WF.pedigree, then msprime.sim_ancestry runs "fixed_pedigree" for recent
+   generations and switches to coalescent for older ones.
+3. If pedigree_mode is false, standard coalescent simulation runs for the full history.
+4. Mutations are added with msprime.sim_mutations at rate 1e-8.
+5. A VCF is written and thinned to match realistic SNP density/MAF distribution (using ukb_snps.pkl).
+6. hap-ibd is run on the VCF to detect IBD segments.
+7. TMRCA annotations are computed from the tree sequence.
+8. Per-chromosome outputs are concatenated into iter{n}.ibd.gz, iter{n}.map, iter{n}.tmrca.gz.
+9. Intermediate files (VCF, HBD, per-chromosome files) are cleaned up unless keep_all_files is true.
+
+Seeding: each iteration gets a deterministic base seed derived from MD5(output_path) + iter_n.
+Each chromosome within an iteration gets its own random seed.
+
+## How sample filtering works
+
+The filter parameter in post-processing controls which samples' IBD segments are used:
+- unfiltered: all samples
+- random: random 10% subset
+- related: 10% subset enriched for close relatives (high total IBD sharing)
+- unrelated: 10% subset with close relatives pruned out
+
+Filtering is computed from the IBD data itself. Node lists are cached as iter{n}_{mode}.txt files.
+
+## How to write a custom post-processing module
+
+Subclass PostProcessor from post_process.py:
+
+  from post_process import PostProcessor
+
+  class MyAnalysis(PostProcessor):
+      sub_config_key = "my_analysis"   # must match the YAML block name
+      resource_fields = ["local", "workers", "mem_gb", "time_min"]
+
+      def execute(self, wait=True):
+          self._execute_helper()       # sets up self.out_dir
+          if self.single_iter:
+              self._single_iter(self.iter_n)
+          else:
+              self._execute_loop(wait=wait)
+
+      def _single_iter(self, iter_n):
+          cfg = self._get_sub_config()
+          prefix = f"{self.path}/iter{iter_n}"
+          # Input files: {prefix}.ibd.gz, {prefix}.map, {prefix}.tmrca.gz
+          # Write output to: self.out_dir
+
+Then add to your YAML:
+  post_process: ibdne,my_analysis
+  my_analysis:
+    object: MyAnalysis
+    path: my_analysis.py
+    my_param: 42
+    workers: 4
+
+Key internals:
+- self._get_sub_config() returns config for your module with all YAML values as attributes.
+- self._get_resource(name) checks module config first, then top-level defaults.
+- self._execute_loop() handles both local and Slurm execution.
+- resource_fields lists fields excluded from config comparison when deciding whether to
+  reuse an existing output directory vs create a new numbered one.
+
+## Known issues and TODOs
+
+- HapNe-LD integration is slow and may not work correctly.
+- Run resumption (passing an existing output directory instead of a YAML) is under development.
+- There is no --no-wait option for simulation (only for postprocess).
+- Long-term goal: integrate ped-sim for more realistic IBD among close relatives.
+- Some older YAML configs (arg9+) use a legacy flat format without the post_process block.
+
+## Common troubleshooting
+
+- "ModuleNotFoundError: No module named 'simulations'" — You skipped step 3 of setup.
+  Run the echo command to register the pipeline modules on the Python path.
+- hap-ibd or IBDNe errors — Check that setup.yaml points to valid jar files and Java is available.
+- "bcftools not found" — Only needed if keep_all_files: true. Install bcftools or set it to false.
+- Slurm jobs fail with OOM — Increase gb (for simulation) or mem_gb (for post-processing).
+- Results directory already exists — The pipeline auto-increments directory names (label_001, label_002).
+  If you want to overwrite, delete the existing directory first.
