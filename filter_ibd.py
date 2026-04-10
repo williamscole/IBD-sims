@@ -54,9 +54,8 @@ def subset_close(related_df, node_set, target=1000):
         nodes.add(row.node2)
         added_nodes.extend([row.node1, row.node2])
     if len(nodes) == target + 1:
-        nodes = sorted([[added_nodes.index(i), i] for i in nodes], key=lambda x: x[0])
-        to_remove = nodes[-1][1]
-        nodes.discard(to_remove)
+        nodes_sorted = sorted([[added_nodes.index(i), i] for i in nodes], key=lambda x: x[0])
+        nodes = {n[1] for n in nodes_sorted[:-1]}
     elif len(nodes) < target:
         n_to_add = target - len(nodes)
         to_add = node_set - nodes
