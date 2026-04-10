@@ -257,6 +257,8 @@ purple_nodes:
   time_min: 60
 ```
 
+**Note that we currently support HapNe-IBD and IBDNe. HapNe-LD integration remains under development.**
+
 ## Output structure
 
 ```
@@ -411,3 +413,11 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
     ├── concat_tmrca.py       # concatenate per-chromosome TMRCA files
     └── utils.py              # CLI override utilities
 ```
+
+## TODO
+
+- [ ] Add a `--no-wait` option to the main simulation.
+- [ ] Allow user to *not* provide hap-ibd path. Would default to exact IBD segments computed by `tskit`.
+- [ ] Add *better* support for resumption of runs, e.g., re-running only some iterations.
+- [ ] HapNe-LD currently is slow/does not work.
+- [ ] Long-term goal: integrate ped-sim for more realistic IBD in close relatives.
