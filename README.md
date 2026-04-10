@@ -52,45 +52,49 @@ These patches are only needed if you intend to run HapNe-IBD or HapNe-LD post-pr
 
 ## Quick start
 
-The main entry point for simulation is `simulate.py`. It handles pedigree creation, per-chromosome simulation, and concatenation of output files.
+All commands go through `run.py`, which dispatches to the appropriate module in `ibd_sims/`.
 
 **Test with the debug config first** to make sure everything is wired up:
 
 ```bash
-python simulate.py yaml_files/debug.yaml --local
+python run.py simulate yaml_files/debug.yaml --local
 ```
 
 **Run on a Slurm cluster (default):**
 
 ```bash
-python simulate.py yaml_files/arg1.yaml
+python run.py simulate yaml_files/arg1.yaml
 ```
 
 **Run locally:**
 
 ```bash
-python simulate.py yaml_files/arg1.yaml --local --workers 8
+python run.py simulate yaml_files/arg1.yaml --local --workers 8
 ```
 
 **Resume a previous run** by passing the output directory instead of a YAML file:
 
 ```bash
-python simulate.py path/to/existing/run/
+python run.py simulate path/to/existing/run/
 ```
 
 **Override YAML parameters on the command line:**
 
 ```bash
-python simulate.py yaml_files/arg1.yaml --set iter=5 --set pedigree.mating=mono
+python run.py simulate yaml_files/arg1.yaml --set iter=5 --set pedigree.mating=mono
 ```
 
 ## Pipeline overview
 
-The pipeline has two independent phases.
+The pipeline has three phases, each accessible as a subcommand of `run.py`.
 
 ### Phase 1: Simulation
 
-`simulate.py` produces IBD segments. For each replicate, the outputs are:
+```bash
+python run.py simulate yaml_files/arg1.yaml
+```
+
+This produces IBD segments. For each replicate, the outputs are:
 
 - `iter{n}.ibd.gz` — concatenated IBD segments across all chromosomes
 - `iter{n}.tmrca.gz` — TMRCA annotations for each IBD segment
@@ -100,34 +104,36 @@ Optional outputs (with `keep_all_files: true`): concatenated VCF, HBD, and per-c
 
 ### Phase 2: Post-processing
 
-`post_process.py` runs analyses on the simulation output. It can be run independently of the simulation, and re-run with different parameters without re-simulating.
+```bash
+python run.py postprocess path/to/run/
+```
+
+Post-processing runs analyses on the simulation output. It can be run independently of the simulation, and re-run with different parameters without re-simulating.
 
 ```bash
-# Run post-processing on a completed simulation
-python post_process.py path/to/run/
-
 # Re-run IBDNe with different parameters
-python post_process.py path/to/run/ --set ibdne.nboots=100 ibdne.mincm=3
+python run.py postprocess path/to/run/ --set ibdne.nboots=100 ibdne.mincm=3
 
 # Run via Slurm instead of locally
-python post_process.py path/to/run/ --set local=false
+python run.py postprocess path/to/run/ --set local=false
 ```
 
 Post-processing output goes into numbered subdirectories (e.g., `ibdne/001/`, `ibdne/002/`). If you re-run with the same analysis parameters, it overwrites the matching directory. If you change parameters, it creates a new one. Each subdirectory contains an `args.yaml` recording exactly which parameters were used for that run.
 
 ### Phase 3: Plotting
 
-`plot.py` plots Ne estimates from one or more post-processing runs against the true demographic history. You specify which numbered subdirectories to include for each tool:
+```bash
+python run.py plot path/to/run/ --ibdne 001 003 --hapne_ibd 001
+```
+
+Plots Ne estimates from one or more post-processing runs against the true demographic history. You specify which numbered subdirectories to include for each tool:
 
 ```bash
-# Plot IBDNe runs 001 and 003, and HapNe-IBD run 001
-python plot.py path/to/run --ibdne 001 003 --hapne_ibd 001
-
 # Plot HapNe-LD only
-python plot.py path/to/run --hapne_ld 001 002
+python run.py plot path/to/run/ --hapne_ld 001 002
 
 # Suppress the log2-Ne vertical reference lines
-python plot.py path/to/run --ibdne 001 --no-vlines
+python run.py plot path/to/run/ --ibdne 001 --no-vlines
 ```
 
 Line labels are built automatically from each subdirectory's `args.yaml` (demographic model, sample size, mating model, filter). Lines are colour-coded by tool — greens for IBDNe, oranges/reds for HapNe-IBD, blue-purples for HapNe-LD — with dash styles cycling within each tool. When more than 10 replicates are present, a 5th–95th percentile band is shown. Output is saved to `{path}/Ne_plot.png`.
@@ -177,7 +183,7 @@ Set `post_process` to a comma-separated list of modules to run, or `null` to ski
 To run post-processing, edit the file or use `--set`:
 
 ```bash
-python simulate.py yaml_files/arg1.yaml --set post_process=ibdne
+python run.py simulate yaml_files/arg1.yaml --set post_process=ibdne
 ```
 
 Each module has its own nested config block with `object` (Python class name), `path` (Python file), analysis parameters, and optional resource overrides.
@@ -356,7 +362,7 @@ Key things to know:
 Simulated VCFs are thinned to match a realistic SNP density and minor allele frequency distribution, controlled by `ukb_snps.pkl`. A default pickle derived from UK Biobank genotype data is included. To generate your own:
 
 ```bash
-python maf_buckets.py \
+python -m ibd_sims.maf_buckets \
     --afreq-chr1 /path/to/chr1.afreq \
     --bim-chr1 /path/to/chr1.bim \
     --output my_snps.pkl
@@ -364,24 +370,25 @@ python maf_buckets.py \
 
 Then point `maf_pickle` in `setup.yaml` to your output file.
 
-## File overview
+## Repository structure
 
-| File | Purpose |
-|------|---------|
-| `simulate.py` | Simulation orchestrator — entry point for Phase 1 |
-| `simulations.py` | Core simulation logic (msprime, VCF, hap-ibd, TMRCA) |
-| `post_process.py` | Post-processing orchestrator — entry point for Phase 2, `PostProcessor` ABC |
-| `post_modules.py` | Built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes |
-| `plot.py` | Plot IBDNe / HapNe-IBD / HapNe-LD Ne estimates vs true Ne |
-| `demography.py` | Demographic model definitions |
-| `wf_pedigree.py` | Wright-Fisher pedigree generation |
-| `write_vcf.py` | VCF and genetic map output with realistic SNP thinning |
-| `maf_buckets.py` | Build SNP density/MAF pickle from plink files |
-| `run_hapne.py` | HapNe-IBD and HapNe-LD runner utilities |
-| `filter_ibd.py` | IBD filtering (related/unrelated/random subsets) |
-| `purple.py` | Purple node matrix computation |
-| `concat_tmrca.py` | Concatenate per-chromosome TMRCA files |
-| `kinship.py` | Kinship degree classification from IBD |
-| `analysis_tools.py` | Post-hoc analysis (TMRCA by length, kinship, etc.) |
-| `setup.yaml` | Machine-specific path configuration — edit before first run |
-| `yaml_files/` | Per-experiment simulation configs |
+```
+├── run.py                    # single entry point (simulate / postprocess / plot)
+├── setup.yaml                # machine-specific path configuration
+├── yaml_files/               # per-experiment simulation configs
+└── ibd_sims/                 # pipeline source code
+    ├── simulate.py           # simulation orchestrator
+    ├── simulations.py        # core simulation logic (msprime, VCF, hap-ibd, TMRCA)
+    ├── post_process.py       # post-processing orchestrator, PostProcessor ABC
+    ├── post_modules.py       # built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes
+    ├── plot_Ne.py            # plot Ne estimates vs true Ne
+    ├── demography.py         # demographic model definitions
+    ├── wf_pedigree.py        # Wright-Fisher pedigree generation
+    ├── write_vcf.py          # VCF and genetic map output with realistic SNP thinning
+    ├── maf_buckets.py        # build SNP density/MAF pickle from plink files
+    ├── run_hapne.py          # HapNe-IBD and HapNe-LD runner utilities
+    ├── filter_ibd.py         # IBD filtering (related/unrelated/random subsets)
+    ├── purple.py             # purple node matrix computation
+    ├── concat_tmrca.py       # concatenate per-chromosome TMRCA files
+    └── utils.py              # CLI override utilities
+```
