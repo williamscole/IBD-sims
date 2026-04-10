@@ -190,7 +190,7 @@ class PostProcessor(ABC):
         iters = list(range(1, self.n_iter + 1))
         return executor.map_array(self._single_iter, iters)
 
-    def _execute_loop(self):
+    def _execute_loop(self, wait=True):
         local = self._get_resource("local")
         iters = list(range(1, self.n_iter + 1))
 
@@ -204,21 +204,26 @@ class PostProcessor(ABC):
                 for iter_n in iters:
                     self._single_iter(iter_n)
         else:
-            for job in self._submit_jobs():
-                job.result()
+            jobs = self._submit_jobs()
+            if wait:
+                for job in jobs:
+                    job.result()
+            else:
+                for job in jobs:
+                    print(f"Submitted job {job.job_id}")
 
     def _single_iter(self, iter_n):
         """Run the analysis for a single iteration. Override in subclass."""
         ...
 
     @abstractmethod
-    def execute(self):
+    def execute(self, wait=True):
         """Run the analysis."""
         ...
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
-def postprocess(config_or_args, n_iter=None, iter_n=None, path=None):
+def postprocess(config_or_args, n_iter=None, iter_n=None, path=None, wait=True):
     if isinstance(config_or_args, AnalysisConfig):
         config = config_or_args
     else:
@@ -233,23 +238,24 @@ def postprocess(config_or_args, n_iter=None, iter_n=None, path=None):
         processor = cls(config, path, n_iter=n_iter, iter_n=iter_n)
         processors.append(processor)
 
-    # For local runs, still just call execute() sequentially (or could parallelise too)
-    # For Slurm, submit all first then wait on all
     local = any(p._get_resource("local") for p in processors)
 
     if local:
         for p in processors:
-            p.execute()
+            p.execute(wait=wait)
     else:
         # Submit all analyses concurrently
         all_jobs = []
         for p in processors:
             p._execute_helper()  # create output dirs first
             all_jobs.extend(p._submit_jobs())
-        
-        # Now wait on everything
-        for job in all_jobs:
-            job.result()
+
+        if wait:
+            for job in all_jobs:
+                job.result()
+        else:
+            for job in all_jobs:
+                print(f"Submitted job {job.job_id}")
 
 
 # ── CLI helpers ───────────────────────────────────────────────────────────────
@@ -286,6 +292,10 @@ def main():
         help="Number of iterations (default: read from args.yaml in run directory)",
     )
     parser.add_argument(
+        "--no-wait", action="store_true", default=False,
+        help="Submit Slurm jobs and exit immediately without waiting for them to finish.",
+    )
+    parser.add_argument(
         "--set", nargs="*", metavar="KEY=VALUE", default=None, action="append",
         help=(
             "Override config values. Use dot notation for nested keys. "
@@ -309,7 +319,7 @@ def main():
 
     config = AnalysisConfig.from_yaml(yaml_file, overrides=args.set)
 
-    postprocess(config, n_iter=config.n_iter, path=config.path)
+    postprocess(config, n_iter=config.n_iter, path=config.path, wait=not args.no_wait)
 
 
 if __name__ == "__main__":
