@@ -60,20 +60,6 @@ def load_args(path):
     return yaml.safe_load(open(f"{path}/args.yaml"))
 
 
-def parse_slurm_time(time_str):
-    """Convert a Slurm --time string to minutes. Accepts HH:MM:SS or MM:SS."""
-    time_str = time_str.replace("--time=", "")
-    parts = time_str.strip().split(":")
-    if len(parts) == 3:
-        h, m, s = parts
-        return int(h) * 60 + int(m) + int(s) // 60
-    elif len(parts) == 2:
-        m, s = parts
-        return int(m) + int(s) // 60
-    else:
-        raise ValueError(f"Unrecognised time format: {time_str}")
-
-
 def make_output_dir(yaml_path, args):
     """Derive output directory name from label, handle clashes."""
     label = args.get("label", "ibdne_sim")
@@ -149,61 +135,11 @@ def run_pedigree(path, iter_n):
 
 def run_simulation(path, iter_n, chrom):
     """Phase 2: simulate one (iteration, chromosome) pair."""
-    sim(path, iter_n, chrom)
+    args = load_args(path)
+    args["seed"] = base_seed(path, iter_n)
+    args["iter_n"] = iter_n
+    sim(args, chrom, path)
 
-def concat_ibd_files(prefix, end_chr, hbd: bool = False):
-    ext = "hbd" if hbd else "ibd"
-    ibd_file = f"{prefix}.{ext}"
-    if not os.path.exists(f"{ibd_file}.gz"):
-        with open(ibd_file, "w") as out:
-            for chrom in range(1, end_chr + 1):
-                chr_file = f"{prefix}_chr{chrom}.{ext}.gz"
-                result = subprocess.run(["zcat", chr_file], capture_output=True, text=True)
-                for line in result.stdout.splitlines():
-                    parts = line.split()
-                    parts[4] = str(chrom)
-                    out.write(" ".join(parts) + "\n")
-        subprocess.run(["gzip", ibd_file], check=True)
-
-def remove_ibd_chr_files(prefix, end_chr, hbd: bool = False):
-    ext = "hbd" if hbd else "ibd"
-    for chrom in range(1, end_chr + 1):
-        chr_file = f"{prefix}_chr{chrom}.{ext}.gz"
-        if os.path.exists(chr_file):
-            os.remove(chr_file)
-
-def concat_vcf(prefix, end_chr):
-    vcf_file = f"{prefix}.vcf.gz"
-    chr_files = [f"{prefix}_chr{chrom}.vcf.gz" for chrom in range(1, end_chr + 1)]
-    if not os.path.exists(vcf_file) and all(os.path.exists(f) for f in chr_files):
-        subprocess.run(
-            ["bcftools", "concat"] + chr_files + ["-Oz", "-o", vcf_file],
-            check=True
-        )
-
-def remove_vcf_chr_files(prefix, end_chr):
-    for chrom in range(1, end_chr + 1):
-        chr_file = f"{prefix}_chr{chrom}.vcf.gz"
-        if os.path.exists(chr_file):
-            os.remove(chr_file)
-
-def concat_map_files(prefix, end_chr):
-    map_file = f"{prefix}.map"
-    if not os.path.exists(map_file):
-        with open(map_file, "w") as out:
-            for chrom in range(1, end_chr + 1):
-                chr_map = f"{prefix}_chr{chrom}.map"
-                with open(chr_map) as f:
-                    for line in f:
-                        parts = line.split()
-                        parts[0] = str(chrom)
-                        out.write(" ".join(parts) + "\n")
-
-def remove_map_chr_files(prefix, end_chr):
-    for chrom in range(1, end_chr + 1):
-        chr_map = f"{prefix}_chr{chrom}.map"
-        if os.path.exists(chr_map):
-            os.remove(chr_map)
 
 def run_post_processing(path, iter_n):
     """Phase 3: concatenate outputs and run post-processing"""
@@ -259,8 +195,8 @@ def run(yaml_path, local, n_workers, overrides=None):
     n_iter = args["iter"]
     end_chr = args["end_chr"]
     pedigree_mode = args["pedigree"]["pedigree_mode"]
-    sim_timeout = parse_slurm_time(args["sim_time"])
-    ibdne_timeout = parse_slurm_time(args["ibdne"]["ibdne_time"])
+    sim_timeout = args["sim_min"]
+    pp_timeout = args.get("ibdne", {}).get("time_min") or args.get("time_min", 120)
 
     # Set up executor
     if local:
@@ -324,15 +260,14 @@ def run(yaml_path, local, n_workers, overrides=None):
         for chrom, job in jobs.items():
             print(f"iter {iter_n} chr {chrom}: job_id={job.job_id} state={job.state}")
 
-    
     # ── Phase 3: Post-processing ──────────────────────────────────────────────
     print("Waiting for simulations and submitting post-processing...")
     if local:
-        executor.update_parameters(timeout_min=ibdne_timeout)
+        executor.update_parameters(timeout_min=pp_timeout)
     else:
         executor.update_parameters(
             mem=int(args["gb"] * 1.8 * 1024),
-            time=ibdne_timeout,
+            time=pp_timeout,
             cpus_per_task=args.get("workers", args.get("nthreads", 1)),
             additional_parameters={}
         )
@@ -350,8 +285,6 @@ def run(yaml_path, local, n_workers, overrides=None):
             if failed:
                 print(f"Warning: {len(failed)} simulation jobs failed for iter {iter_n}, skipping post-processing")
                 continue
-
-        # import pdb; pdb.set_trace()
 
         post_jobs[iter_n] = executor.submit(run_post_processing, path, iter_n)
 
