@@ -22,7 +22,7 @@ import warnings
 pd.options.mode.chained_assignment = None
 
 def load_config():
-    config_path = Path(__file__).parent / "setup.yaml"
+    config_path = Path(__file__).parent.parent / "setup.yaml"
     return yaml.safe_load(open(config_path))
 
 class WFSetup:

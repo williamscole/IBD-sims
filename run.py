@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-run.py — single entry point for the IBD-sims pipeline.
+entry.py — CLI entry point for the IBD-sims pipeline.
 
-Usage:
+Usage (via top-level run.py):
     python run.py simulate yaml_files/arg1.yaml --local --workers 8
     python run.py postprocess path/to/run/ --set ibdne.mincm=3
     python run.py plot path/to/run/ --ibdne 001 003 --hapne_ibd 001
@@ -12,9 +12,6 @@ import argparse
 import os
 import sys
 from pathlib import Path
-
-# Add ibd_sims/ to the import path so internal imports resolve unchanged
-sys.path.insert(0, str(Path(__file__).parent / "ibd_sims"))
 
 
 def cmd_simulate(args):

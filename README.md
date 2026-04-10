@@ -8,6 +8,8 @@ Ancestry is simulated with [msprime](https://tskit.dev/msprime/docs/stable/intro
 
 **Python packages:** msprime, numpy, pandas, matplotlib, seaborn, PyYAML, submitit, stdpopsim, hapne
 
+
+
 **External tools (must be configured in `setup.yaml`):**
 
 - [hap-ibd](https://github.com/browning-lab/hap-ibd) — IBD segment detection (Java jar)
@@ -17,7 +19,24 @@ Ancestry is simulated with [msprime](https://tskit.dev/msprime/docs/stable/intro
 
 ## Setup
 
-Before running anything, edit `setup.yaml` to point to your local paths:
+### 1. Create the conda environment
+
+```bash
+conda env create -f environment.yaml
+conda activate ibd-sims
+```
+
+### 2. Register the pipeline
+
+This ensures Python (and Slurm workers) can find the pipeline modules:
+
+```bash
+echo "$(cd ibd_sims && pwd)" > $(python -c "import site; print(site.getsitepackages()[0])")/ibd-sims.pth
+```
+
+### 3. Configure paths
+
+Edit `ibd_sims/setup.yaml` to point to your local paths:
 
 ```yaml
 maf_pickle: ukb_snps.pkl
