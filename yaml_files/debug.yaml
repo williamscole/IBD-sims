@@ -5,7 +5,7 @@ custom_sim:
   object: null
   path: null
 base_dir: debug
-end_chr: 2
+end_chr: 30
 filtersamples: false
 gb: 6
 gmax: 300

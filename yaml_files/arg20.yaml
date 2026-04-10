@@ -4,7 +4,7 @@ dir_name: ibd-sims
 keep_all_files: true
 
 # Computational resources for simulation
-gb: 6
+gb: 8
 sim_time: --time=30:00
 nthreads: 8
 
@@ -45,7 +45,7 @@ ibdne:
 
   ibd_filter: null
   ibdne_jar: /users/cwilli50/ibdne.23Apr20.ae9.jar
-  ibdne_time: --time=1:00:00
+  ibdne_time: --time=2:00:00
   mincm: 2
   nboots: 80
   nits: 1000
@@ -63,5 +63,12 @@ purple_nodes:
 test:
   path: post_modules.py
   object: PostProcessTest
+
+hapne_ld:
+  object: PostProcessHapNeLD
+  path: post_modules.py
+  filter: unfiltered       # used as population_name in HapNe config
+  workers: 4
+  mem_gb: 16
 
 
