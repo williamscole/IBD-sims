@@ -103,6 +103,17 @@ python run.py simulate path/to/existing/run/
 python run.py simulate yaml_files/arg1.yaml --set iter=5 --set pedigree.mating=mono
 ```
 
+**Run and forget:**
+
+By default, the pipeline will hang while the slurm jobs are running. By using
+
+```bash
+python run.py simulate yaml_files/arg1.yaml --no-wait
+```
+
+the pipeline will submit the slurm jobs and exit. Note: it will skip any post-processing steps.
+
+
 ## Pipeline overview
 
 The pipeline has three phases, each accessible as a subcommand of `run.py`.
@@ -416,7 +427,7 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 
 ## TODO
 
-- [ ] Add a `--no-wait` option to the main simulation.
+- [x] Add a `--no-wait` option to the main simulation.
 - [ ] Allow user to *not* provide hap-ibd path. Would default to exact IBD segments computed by `tskit`.
 - [ ] Add *better* support for resumption of runs, e.g., re-running only some iterations.
 - [ ] HapNe-LD currently is slow/does not work.

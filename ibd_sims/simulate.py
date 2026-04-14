@@ -226,8 +226,8 @@ def run_post_processing(path, iter_n):
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
-def run(yaml_path, local, n_workers, overrides=None):
-
+def run(yaml_path, local, n_workers, overrides=None, wait=True):
+    
     # Set up output directory
     if os.path.isdir(yaml_path) and os.path.exists(f"{yaml_path}/args.yaml"):
         path = yaml_path
@@ -310,6 +310,19 @@ def run(yaml_path, local, n_workers, overrides=None):
         for chrom, job in jobs.items():
             print(f"iter {iter_n} chr {chrom}: job_id={job.job_id} state={job.state}")
 
+    # ── Early exit if --no-wait ───────────────────────────────────────────────
+    if not wait:
+        all_job_ids = [
+            job.job_id
+            for jobs in sim_jobs.values()
+            for job in jobs.values()
+        ]
+        print(f"Submitted {len(all_job_ids)} simulation jobs (--no-wait). Job IDs:")
+        for job_id in all_job_ids:
+            print(f"  {job_id}")
+        print(f"To post-process later: python run.py postprocess {path}")
+        return
+
     # ── Phase 3: Post-processing ──────────────────────────────────────────────
     print("Waiting for simulations and submitting post-processing...")
     if local:
@@ -360,6 +373,8 @@ def parse_args():
     parser.add_argument("--local", action="store_true", help="Run locally instead of submitting to Slurm")
     parser.add_argument("--workers", type=int, default=os.cpu_count(),
                         help="Number of parallel workers for local execution (default: all available CPUs)")
+    parser.add_argument("--no-wait", action="store_true", default=False,
+                        help="Submit Slurm jobs and exit without waiting for them to finish")
     parser.add_argument(
         "--set", nargs="*", metavar="KEY=VALUE", default=None, action="append",
         help=(
@@ -373,4 +388,4 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.yaml, args.local, args.workers, overrides=args.set)
+    run(args.yaml, args.local, args.workers, overrides=args.set, wait=not args.no_wait)
