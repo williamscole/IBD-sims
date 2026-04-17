@@ -1,0 +1,51 @@
+experiment: test
+
+# These HAVE to be shared across simulations
+iter: 50
+samples: 1000
+
+# These can change across simulations
+gb: 8
+sim_min: 30
+nthreads: 8
+keep_all_files: false
+
+# Experiments
+end_chr:
+  22:
+    resources:
+      sim_min: 45
+  30: {}
+
+demographies:
+  constant_Ne_10k:
+    object: constant_Ne
+    path: ibd_sims/demography.py
+
+  constant_Ne_100k:
+    object: constant_Ne100k
+    path: ibd_sims/demography.py
+    resources:
+      sim_min: 45
+
+custom_sims:
+  quebec:
+    object: load_random_10000
+    path: load_quebec.py
+    resources:
+      gb: 32
+      sim_min: 30
+
+mating:
+  DTWF_di:
+    pedigree_mode: true
+    mating: di
+    gen_end: 25
+    pedigree_file: null
+  DTWF_mono:
+      pedigree_mode: true
+      mating: mono
+      gen_end: 25
+      pedigree_file: null
+
+post_processing: ibdne,hapne_ibd
