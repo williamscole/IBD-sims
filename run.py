@@ -16,7 +16,7 @@ from pathlib import Path
 
 def cmd_simulate(args):
     from simulate import run
-    run(args.yaml, args.local, args.workers, overrides=args.set, wait=not args.no_wait)
+    run(args.yaml, args.local, args.workers, overrides=args.set, wait=not args.no_wait, max_n_slurm_jobs=args.max_jobs)
 
 
 def cmd_postprocess(args):
@@ -63,6 +63,8 @@ def main():
     p_sim.add_argument("--set", nargs="*", metavar="KEY=VALUE",
         default=None, action="append",
         help="Override YAML parameters (e.g. --set iter=5 pedigree.mating=mono)")
+    p_sim.add_argument("--max-jobs", type=int, default=1000,
+                        help="Max number of slurm jobs to submit.")
     p_sim.add_argument("--no-wait", action="store_true", default=False,
         help="Submit Slurm jobs and exit without waiting for them to finish")
     p_sim.set_defaults(func=cmd_simulate)

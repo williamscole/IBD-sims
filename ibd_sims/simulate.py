@@ -226,7 +226,7 @@ def run_post_processing(path, iter_n):
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
-def run(yaml_path, local, n_workers, overrides=None, wait=True):
+def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs=1000):
     
     # Set up output directory
     if os.path.isdir(yaml_path) and os.path.exists(f"{yaml_path}/args.yaml"):
@@ -292,14 +292,42 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True):
 
     sim_jobs = {}
     if tasks:
-        jobs = executor.map_array(
-            run_simulation,
-            [path] * len(tasks),
-            [t[0] for t in tasks],
-            [t[1] for t in tasks],
-        )
-        for (iter_n, chrom), job in zip(tasks, jobs):
-            sim_jobs.setdefault(iter_n, {})[chrom] = job
+        if len(tasks) <= max_n_slurm_jobs:
+            jobs = executor.map_array(
+                run_simulation,
+                [path] * len(tasks),
+                [t[0] for t in tasks],
+                [t[1] for t in tasks],
+            )
+            for (iter_n, chrom), job in zip(tasks, jobs):
+                sim_jobs.setdefault(iter_n, {})[chrom] = job
+        else:
+            if not wait:
+                print(f"Warning: --no-wait ignored because {len(tasks)} tasks exceeds "
+                    f"max_n_slurm_jobs={max_n_slurm_jobs}. Batching required.")
+                wait = True
+
+            n_iter_in_batch = max(1, max_n_slurm_jobs // 4 // end_chr)
+            n_tasks_in_batch = n_iter_in_batch * end_chr
+            batches = [tasks[i:i+n_tasks_in_batch] for i in range(0, len(tasks), n_tasks_in_batch)]
+
+            print(f"Submitting {len(tasks)} tasks in {len(batches)} batches of "
+                f"{n_tasks_in_batch} ({n_iter_in_batch} iterations each)...")
+
+            for i, batch in enumerate(batches):
+                print(f"Submitting batch {i+1}/{len(batches)}...")
+                jobs = executor.map_array(
+                    run_simulation,
+                    [path] * len(batch),
+                    [t[0] for t in batch],
+                    [t[1] for t in batch],
+                )
+                for (iter_n, chrom), job in zip(batch, jobs):
+                    sim_jobs.setdefault(iter_n, {})[chrom] = job
+
+                failed = wait_for_jobs(jobs)
+                if failed:
+                    print(f"Warning: {len(failed)} jobs failed in batch {i+1}")
 
     for iter_n, jobs in sim_jobs.items():
         print(f"iter {iter_n}: {list(jobs.keys())} job ids: {[j.job_id for j in jobs.values()]}")
@@ -375,6 +403,8 @@ def parse_args():
                         help="Number of parallel workers for local execution (default: all available CPUs)")
     parser.add_argument("--no-wait", action="store_true", default=False,
                         help="Submit Slurm jobs and exit without waiting for them to finish")
+    parser.add_argument("--max-jobs", type=int, default=1000,
+                        help="Max number of slurm jobs to submit.")
     parser.add_argument(
         "--set", nargs="*", metavar="KEY=VALUE", default=None, action="append",
         help=(
@@ -388,4 +418,4 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.yaml, args.local, args.workers, overrides=args.set, wait=not args.no_wait)
+    run(args.yaml, args.local, args.workers, overrides=args.set, wait=not args.no_wait, max_n_slurm_jobs=args.max_jobs)
