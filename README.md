@@ -194,7 +194,11 @@ nthreads: 8
 keep_all_files: false
 
 # Axes to vary
-end_chr: [22, 30]
+end_chr:
+  22: {}        # no resource overrides
+  30:
+    resources:
+      sim_min: 45  # override for this end_chr
 
 demographies:
   constant_Ne_10k:
