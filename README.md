@@ -8,8 +8,6 @@ Ancestry is simulated with [msprime](https://tskit.dev/msprime/docs/stable/intro
 
 **Python packages:** msprime, numpy, pandas, matplotlib, seaborn, PyYAML, submitit, stdpopsim, hapne
 
-
-
 **External tools (must be configured in `setup.yaml`):**
 
 - [hap-ibd](https://github.com/browning-lab/hap-ibd) — IBD segment detection (Java jar)
@@ -91,7 +89,13 @@ python run.py simulate yaml_files/arg1.yaml
 python run.py simulate yaml_files/arg1.yaml --local --workers 8
 ```
 
-**Resume a previous run (under development)** by passing the output directory instead of a YAML file:
+**Submit to Slurm and exit immediately (no waiting):**
+
+```bash
+python run.py simulate yaml_files/arg1.yaml --no-wait
+```
+
+**Resume a previous run** by passing the output directory instead of a YAML file:
 
 ```bash
 python run.py simulate path/to/existing/run/
@@ -103,16 +107,13 @@ python run.py simulate path/to/existing/run/
 python run.py simulate yaml_files/arg1.yaml --set iter=5 --set pedigree.mating=mono
 ```
 
-**Run and forget:**
-
-By default, the pipeline will hang while the slurm jobs are running. By using
+**Limit the number of queued Slurm jobs** (useful if your cluster has a job queue limit):
 
 ```bash
-python run.py simulate yaml_files/arg1.yaml --no-wait
+python run.py simulate yaml_files/arg1.yaml --max-jobs 100
 ```
 
-the pipeline will submit the slurm jobs and exit. Note: it will skip any post-processing steps.
-
+The default is 1000. When the total number of tasks exceeds `--max-jobs`, the pipeline automatically splits them into batches and submits the next batch only after the previous one completes. Batch size is set to approximately `max_jobs // 4` tasks. Note that `--no-wait` is ignored when batching is required.
 
 ## Pipeline overview
 
@@ -144,6 +145,9 @@ Post-processing runs analyses on the simulation output. It can be run independen
 # Re-run IBDNe with different parameters
 python run.py postprocess path/to/run/ --set ibdne.nboots=100 ibdne.mincm=3
 
+# Submit post-processing jobs and exit immediately
+python run.py postprocess path/to/run/ --no-wait
+
 # Run via Slurm instead of locally
 python run.py postprocess path/to/run/ --set local=false
 ```
@@ -167,6 +171,110 @@ python run.py plot path/to/run/ --ibdne 001 --no-vlines
 ```
 
 Line labels are built automatically from each subdirectory's `args.yaml` (demographic model, sample size, mating model, filter). Lines are colour-coded by tool — greens for IBDNe, oranges/reds for HapNe-IBD, blue-purples for HapNe-LD — with dash styles cycling within each tool. When more than 10 replicates are present, a 5th–95th percentile band is shown. Output is saved to `{path}/Ne_plot.png`.
+
+## Experiment manager
+
+For running batches of simulations across multiple demographic histories, mating models, and genome configurations, use the experiment manager (`experiment.py`).
+
+### Workflow
+
+**1. Create an experiment meta-YAML** (see `yaml_files/experiment.yaml` for an example):
+
+```yaml
+experiment: my_experiment
+
+# Fixed across all simulations
+iter: 50
+samples: 1000
+
+# Default resources (can be overridden per-demography or per-mating)
+gb: 8
+sim_min: 30
+nthreads: 8
+keep_all_files: false
+
+# Axes to vary
+end_chr: [22, 30]
+
+demographies:
+  constant_Ne_10k:
+    object: constant_Ne
+    path: ibd_sims/demography.py
+
+  constant_Ne_100k:
+    object: constant_Ne100k
+    path: ibd_sims/demography.py
+    resources:
+      sim_min: 45      # overrides default sim_min for this demography
+
+custom_sims:           # these do NOT iterate over end_chr or mating
+  quebec:
+    object: load_random_10000
+    path: load_quebec.py
+    resources:
+      gb: 32
+
+mating:
+  DTWF_di:
+    pedigree_mode: true
+    mating: di
+    gen_end: 25
+    pedigree_file: null
+
+post_processing: ibdne,hapne_ibd
+```
+
+Resource overrides follow a `max()` rule — if multiple axes specify `sim_min`, the largest value is used for that combination.
+
+**2. Preview the experiment plan (no files created):**
+
+```bash
+python experiment.py describe yaml_files/experiment.yaml
+```
+
+**3. Initialise the experiment (creates directories and generates YAML files):**
+
+```bash
+python experiment.py init yaml_files/experiment.yaml
+```
+
+This creates:
+```
+my_experiment/
+└── yaml_files/
+    ├── constant_Ne_10k__DTWF_di__chr22.yaml
+    ├── constant_Ne_10k__DTWF_di__chr30.yaml
+    ├── constant_Ne_100k__DTWF_di__chr22.yaml
+    ├── constant_Ne_100k__DTWF_di__chr30.yaml
+    └── quebec.yaml
+```
+
+**4. Get the commands to run:**
+
+```bash
+# All simulations
+python experiment.py commands yaml_files/experiment.yaml
+
+# Only simulations not yet complete
+python experiment.py commands yaml_files/experiment.yaml --pending-only
+
+# With --no-wait (to fire-and-forget on Slurm)
+python experiment.py commands yaml_files/experiment.yaml --no-wait
+```
+
+**5. Check progress:**
+
+```bash
+python experiment.py status yaml_files/experiment.yaml
+```
+
+### Adding post-processing
+
+After simulations are complete, edit the generated YAML files in `my_experiment/yaml_files/` to add post-processing blocks, then run:
+
+```bash
+python run.py postprocess my_experiment/constant_Ne_10k__DTWF_di__chr30/ --no-wait
+```
 
 ## YAML configuration
 
@@ -218,58 +326,6 @@ python run.py simulate yaml_files/arg1.yaml --set post_process=ibdne
 
 Each module has its own nested config block with `object` (Python class name), `path` (Python file), analysis parameters, and optional resource overrides.
 
-Resource fields (`workers`, `mem_gb`, `time_min`) can be set at the top level as defaults and overridden per module:
-
-```yaml
-post_process: ibdne,hapne_ibd,hapne_ld,purple_nodes  # null to skip
-
-# Default resources for all post-processing jobs
-workers: 8
-mem_gb: 16
-time_min: 120
-
-ibdne:
-  object: PostProcessIBDNe
-  path: post_modules.py
-  filter: unfiltered        # sample filtering: unfiltered, related, unrelated, random
-  filtersamples: false
-  mincm: 2
-  trimcm: 0.2
-  gmin: 1
-  gmax: 300
-  nboots: 80
-  nits: 1000
-  npairs: 0
-  workers: 8
-  mem_gb: 16
-  time_min: 120
-
-hapne_ibd:
-  object: PostProcessHapNeIBD
-  path: post_modules.py
-  filter: unfiltered        # sample filtering: unfiltered, related, unrelated, random
-  workers: 4
-  mem_gb: 16
-  time_min: 120
-
-hapne_ld:
-  object: PostProcessHapNeLD
-  path: post_modules.py
-  filter: unfiltered
-  workers: 4
-  mem_gb: 16
-  time_min: 120
-
-purple_nodes:
-  object: PostProcessPurple
-  path: post_modules.py
-  workers: 4
-  mem_gb: 8
-  time_min: 60
-```
-
-**Note that we currently support HapNe-IBD and IBDNe. HapNe-LD integration remains under development.**
-
 ## Output structure
 
 ```
@@ -284,30 +340,15 @@ run_directory/
 │   │   ├── iter1.ne          # IBDNe output
 │   │   └── ...
 │   └── 002/                  # re-run with different parameters
-│       ├── args.yaml
-│       └── ...
 ├── hapne_ibd/
 │   └── 001/
-│       ├── args.yaml
-│       ├── iter1/
-│       │   └── HapNe/
-│       │       └── hapne.csv
-│       └── ...
 ├── hapne_ld/
 │   └── 001/
-│       ├── args.yaml
-│       ├── iter1/
-│       │   └── HapNe/
-│       │       └── hapne.csv
-│       └── ...
 ├── purple_nodes/
 │   └── 001/
-│       ├── args.yaml
-│       ├── iter1.npy
-│       └── ...
-├── Ne_plot.png               # output of plot.py
-├── slurm/                    # Slurm/submitit logs
-└── errors/                   # error logs
+├── Ne_plot.png
+├── slurm/
+└── errors/
 ```
 
 ## Example configurations
@@ -345,7 +386,6 @@ Several models are provided in `demography.py`: `constant_Ne` (10k), `constant_N
 Subclass `PostProcessor` from `post_process.py`:
 
 ```python
-# my_analysis.py
 from post_process import PostProcessor
 
 class MyAnalysis(PostProcessor):
@@ -384,7 +424,7 @@ Key things to know:
 - `sub_config_key` must match the YAML block name exactly.
 - `resource_fields` lists fields excluded from config comparison when deciding whether to reuse an existing output directory.
 - `self._get_sub_config()` returns the config object for your module, with all YAML values as attributes.
-- `self._get_resource(name)` checks the module config first, then falls back to top-level defaults. Use this for `workers`, `mem_gb`, and `time_min`.
+- `self._get_resource(name)` checks the module config first, then falls back to top-level defaults.
 - `self._execute_loop()` handles both local and Slurm execution based on the `local` resource setting.
 - `self.out_dir` is set by `_execute_helper()` and points to the numbered output subdirectory.
 - Check `self.single_iter` to distinguish single-iteration vs. full runs.
@@ -406,6 +446,7 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 
 ```
 ├── run.py                    # single entry point (simulate / postprocess / plot)
+├── experiment.py             # experiment manager (plan and track batches of simulations)
 ├── setup.yaml                # machine-specific path configuration
 ├── yaml_files/               # per-experiment simulation configs
 └── ibd_sims/                 # pipeline source code
@@ -427,8 +468,7 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 
 ## TODO
 
-- [x] Add a `--no-wait` option to the main simulation.
-- [ ] Allow user to *not* provide hap-ibd path. Would default to exact IBD segments computed by `tskit`.
 - [ ] Add *better* support for resumption of runs, e.g., re-running only some iterations.
+- [ ] Allow user to *not* provide hap-ibd path. Would default to exact IBD segments computed by `tskit`.
 - [ ] HapNe-LD currently is slow/does not work.
 - [ ] Long-term goal: integrate ped-sim for more realistic IBD in close relatives.
