@@ -329,14 +329,14 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
                 if failed:
                     print(f"Warning: {len(failed)} jobs failed in batch {i+1}")
 
-    for iter_n, jobs in sim_jobs.items():
-        print(f"iter {iter_n}: {list(jobs.keys())} job ids: {[j.job_id for j in jobs.values()]}")
+    # for iter_n, jobs in sim_jobs.items():
+    #     print(f"iter {iter_n}: {list(jobs.keys())} job ids: {[j.job_id for j in jobs.values()]}")
 
     time.sleep(15)
 
-    for iter_n, jobs in sim_jobs.items():
-        for chrom, job in jobs.items():
-            print(f"iter {iter_n} chr {chrom}: job_id={job.job_id} state={job.state}")
+    # for iter_n, jobs in sim_jobs.items():
+    #     for chrom, job in jobs.items():
+    #         print(f"iter {iter_n} chr {chrom}: job_id={job.job_id} state={job.state}")
 
     # ── Early exit if --no-wait ───────────────────────────────────────────────
     if not wait:
