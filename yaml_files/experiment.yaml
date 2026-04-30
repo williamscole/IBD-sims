@@ -1,14 +1,14 @@
-experiment: test
+experiment: test_experiment
 
 # These HAVE to be shared across simulations
-iter: 50
+iter: 25
 samples: 1000
 
 # These can change across simulations
 gb: 8
 sim_min: 30
 nthreads: 8
-keep_all_files: false
+keep_all_files: true
 
 # Experiments
 end_chr:
@@ -28,6 +28,13 @@ demographies:
     resources:
       sim_min: 45
 
+  OOA2:
+    object: ooa2
+    path: ibd_sims/demography.py
+    resources:
+      sim_min: 120
+      gb: 16
+
 custom_sims:
   quebec:
     object: load_random_10000
@@ -42,10 +49,11 @@ mating:
     mating: di
     gen_end: 25
     pedigree_file: null
-  DTWF_mono:
-      pedigree_mode: true
-      mating: mono
-      gen_end: 25
-      pedigree_file: null
+
+  # DTWF_mono:
+  #     pedigree_mode: true
+  #     mating: mono
+  #     gen_end: 25
+  #     pedigree_file: null
 
 post_processing: ibdne,hapne_ibd
