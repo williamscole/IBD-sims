@@ -476,3 +476,4 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 - [ ] Allow user to *not* provide hap-ibd path. Would default to exact IBD segments computed by `tskit`.
 - [ ] HapNe-LD currently is slow/does not work.
 - [ ] Long-term goal: integrate ped-sim for more realistic IBD in close relatives.
+- [ ] For a custom sim, the user needs to specify end_chr. The current strategy is hacky: put it under resources to override the top level end_chr. Low priority: implement in a better way. 
