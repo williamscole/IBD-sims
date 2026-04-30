@@ -244,7 +244,7 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
     args = load_args(path)
     n_iter = args["iter"]
     end_chr = args["end_chr"]
-    pedigree_mode = args["pedigree"]["pedigree_mode"]
+    pedigree_mode = args.get("pedigree") and args["pedigree"].get("pedigree_mode", False)
     sim_timeout = args["sim_min"]
     pp_timeout = args.get("ibdne", {}).get("time_min") or args.get("time_min", 120)
 
