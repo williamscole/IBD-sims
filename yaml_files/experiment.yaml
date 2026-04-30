@@ -1,7 +1,7 @@
 experiment: test_experiment
 
 # These HAVE to be shared across simulations
-iter: 25
+iter: 10
 samples: 1000
 
 # These can change across simulations
@@ -12,9 +12,9 @@ keep_all_files: true
 
 # Experiments
 end_chr:
-  22:
-    resources:
-      sim_min: 45
+  # 22:
+  #   resources:
+  #     sim_min: 45
   30: {}
 
 demographies:
@@ -26,7 +26,7 @@ demographies:
     object: constant_Ne100k
     path: ibd_sims/demography.py
     resources:
-      sim_min: 45
+      sim_min: 120
 
   OOA2:
     object: ooa2
@@ -42,6 +42,7 @@ custom_sims:
     resources:
       gb: 32
       sim_min: 30
+      end_chr: 22
 
 mating:
   DTWF_di:
@@ -56,4 +57,4 @@ mating:
   #     gen_end: 25
   #     pedigree_file: null
 
-post_processing: ibdne,hapne_ibd
+post_processing: none
