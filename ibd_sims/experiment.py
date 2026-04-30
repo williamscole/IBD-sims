@@ -27,6 +27,11 @@ def write_out_yaml(shared_args, exp_args, resources, yaml_path):
 
     return args_dict
 
+def get_yaml_files(yaml_dir):
+    with open(yaml_dir / "yaml_files.txt") as yamlf:
+        yaml_files = yamlf.readlines()
+
+    return [yaml_dir / f.strip() for f in yaml_files]
 
 # ── Label ─────────────────────────────────────────────────────────────────────
 
@@ -71,7 +76,7 @@ def create_arg_yamls(exp_dict):
     yaml_dir = Path(exp_dict["base_dir"]) / "yaml_files"
     all_end_chrs = list(exp_dict["end_chr"].keys())
 
-    yaml_paths = []  # collect for status / commands
+    yaml_paths_with_time = []
 
     # ── demographies x mating x end_chr ──────────────────────────────────────
     for demo_name, demo in exp_dict.get("demographies", {}).items():
@@ -81,13 +86,18 @@ def create_arg_yamls(exp_dict):
                 resources = extract_resources(demo, mating, end_chr_options)
                 exp_args = {
                     "custom_demo": demo,
+                    "custom_sim": {"path": None, "object": None},
                     "pedigree": mating,
                     "end_chr": end_chr,
                     "label": label,
                 }
                 yaml_path = yaml_dir / f"{label}.yaml"
                 write_out_yaml(shared_args, exp_args, resources, yaml_path)
-                yaml_paths.append(yaml_path)
+
+                # Add yaml and keep track of the sim time
+                resolved_sim_min = max(resources.get("sim_min", 0), shared_args.get("sim_min", 0))
+                yaml_paths_with_time.append((yaml_path, resolved_sim_min))
+
                 print(f"  wrote {yaml_path}")
 
     # ── custom_sims (no end_chr or mating iteration) ────────────────────────
@@ -97,11 +107,22 @@ def create_arg_yamls(exp_dict):
         exp_args = {
             "custom_sim": custom_sim,
             "label": label,
+            "custom_demo": {"path": None, "object": None},
         }
         yaml_path = yaml_dir / f"{label}.yaml"
         write_out_yaml(shared_args, exp_args, resources, yaml_path)
-        yaml_paths.append(yaml_path)
+
+        # Add yaml and keep track of the sim time
+        resolved_sim_min = max(resources.get("sim_min", 0), shared_args.get("sim_min", 0))
+        yaml_paths_with_time.append((yaml_path, resolved_sim_min))
+
         print(f"  wrote {yaml_path}")
+
+    yaml_paths = [p for p, _ in sorted(yaml_paths_with_time, key=lambda x: x[1])]
+
+    # New: write out a summary file
+    with open(yaml_dir / "yaml_files.txt", "w") as outf:
+        outf.write("\n".join([i.name for i in yaml_paths])+"\n")
 
     return yaml_paths
 
@@ -242,7 +263,7 @@ def write_bash(cmds, path):
 
     # Make the script executable
     os.chmod(script_path, 0o755)
-    print(f"{script_path}")
+    print(f"bash {script_path}")
 
 def print_commands(exp_dict, yaml_paths, pending_only=False, no_wait=False):
     """Print run.py commands for all (or only pending) simulations."""
@@ -265,8 +286,6 @@ def print_commands(exp_dict, yaml_paths, pending_only=False, no_wait=False):
     print("\n")
     print("Run this bash script to run the simulation:")
     write_bash(cmds, yaml_path.parent.parent)
-
-
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -312,7 +331,7 @@ def main():
     elif args.command == "status":
         setup_dirs(exp_dict)
         yaml_dir = Path(exp_dict["base_dir"]) / "yaml_files"
-        yaml_paths = sorted(yaml_dir.glob("*.yaml"))
+        yaml_paths = get_yaml_files(yaml_dir)
         if not yaml_paths:
             print("No YAML files found. Run 'init' first.")
         else:
@@ -321,7 +340,7 @@ def main():
     elif args.command == "commands":
         setup_dirs(exp_dict)
         yaml_dir = Path(exp_dict["base_dir"]) / "yaml_files"
-        yaml_paths = sorted(yaml_dir.glob("*.yaml"))
+        yaml_paths = get_yaml_files(yaml_dir)
         if not yaml_paths:
             print("No YAML files found. Run 'init' first.")
         else:
