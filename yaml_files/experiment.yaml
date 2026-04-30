@@ -38,7 +38,7 @@ demographies:
 custom_sims:
   quebec:
     object: load_random_10000
-    path: load_quebec.py
+    path: ibd_sims/load_quebec.py
     resources:
       gb: 32
       sim_min: 30
