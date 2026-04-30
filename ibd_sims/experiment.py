@@ -209,6 +209,40 @@ def print_status(exp_dict, yaml_paths):
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
+def write_bash(cmds, path):
+    # Ensure the directory exists
+    os.makedirs(path, exist_ok=True)
+    script_path = os.path.join(path, "run.sh")
+    
+    with open(script_path, "w") as f:
+        # 1. Shebang and Header
+        f.write("#!/bin/bash\n\n")
+        f.write("# Check if we are in test mode\n")
+        f.write("TEST_MODE=false\n")
+        f.write('if [ "$1" == "test" ]; then\n')
+        f.write("    echo '--- RUNNING IN TEST MODE (Dry Run) ---'\n")
+        f.write("    TEST_MODE=true\n")
+        f.write("fi\n\n")
+        
+        # 2. Command Execution Loop
+        for i, cmd in enumerate(cmds, 1):
+            f.write(f'echo "[Step {i}/{len(cmds)}] Starting: {cmd}"\n')
+            f.write('start_time=$(date +%s)\n\n')
+            
+            f.write('if [ "$TEST_MODE" = true ]; then\n')
+            f.write(f'    echo "  >> (Test) Would execute: {cmd}"\n')
+            f.write('else\n')
+            f.write(f'    {cmd}\n')
+            f.write('fi\n\n')
+            
+            f.write('end_time=$(date +%s)\n')
+            f.write('elapsed=$((end_time - start_time))\n')
+            f.write(f'echo "[Step {i}/{len(cmds)}] Finished in ${{elapsed}}s"\n')
+            f.write('echo "------------------------------------------"\n\n')
+
+    # Make the script executable
+    os.chmod(script_path, 0o755)
+    print(f"{script_path}")
 
 def print_commands(exp_dict, yaml_paths, pending_only=False, no_wait=False):
     """Print run.py commands for all (or only pending) simulations."""
@@ -222,8 +256,16 @@ def print_commands(exp_dict, yaml_paths, pending_only=False, no_wait=False):
         yaml_paths = [p for p in yaml_paths if p in pending]
 
     flag = " --no-wait" if no_wait else ""
+    cmds = []
     for yaml_path in yaml_paths:
-        print(f"python run.py simulate {yaml_path}{flag}")
+        cmd = f"python run.py simulate {yaml_path}{flag}"
+        print(cmd)
+        cmds.append(cmd)
+
+    print("\n")
+    print("Run this bash script to run the simulation:")
+    write_bash(cmds, yaml_path.parent.parent)
+
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
