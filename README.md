@@ -280,6 +280,86 @@ After simulations are complete, edit the generated YAML files in `my_experiment/
 python run.py postprocess my_experiment/constant_Ne_10k__DTWF_di__chr30/ --no-wait
 ```
 
+## Postprocessing experiment manager
+
+For running batches of post-processing analyses across all simulations in an experiment — varying parameters like IBD filters or minimum segment length — use the postprocessing experiment manager (`postprocess_experiment.py`).
+
+### Workflow
+
+**1. Create a postprocess meta-YAML** (see `yaml_files/postprocess_experiment.yaml` for an example):
+
+```yaml
+experiment_directory: my_experiment
+
+postprocess: [ibdne, hapne_ibd]
+
+ibdne:
+  path: ibd_sims/post_modules.py
+  object: PostProcessIBDNe
+  mincm: 2
+  trimcm: 0.2
+  gmin: 1
+  gmax: 300
+  nboots: 80
+  nits: 1000
+  npairs: 0
+  workers: 8
+  mem_gb: 16
+  time_min: 120
+
+  combo_args:
+    filtersamples: [true, false]
+    filter: [null, related, unrelated]
+
+  ignore_combo:
+    combo1:
+      filtersamples: true
+      filter: null
+
+hapne_ibd:
+  path: ibd_sims/post_modules.py
+  object: PostProcessHapNeIBD
+  workers: 4
+  mem_gb: 16
+  time_min: 120
+
+  combo_args:
+    filter: [null, related, unrelated]
+```
+
+`combo_args` defines the axes to vary; every combination is generated automatically. `add_combo` and `ignore_combo` let you manually add or remove specific combinations.
+
+**2. Preview the postprocessing plan (no files created):**
+
+```bash
+python ibd_sims/postprocess_experiment.py describe yaml_files/postprocess_experiment.yaml
+```
+
+**3. Initialise (creates the tracking file and base config):**
+
+```bash
+python ibd_sims/postprocess_experiment.py init yaml_files/postprocess_experiment.yaml
+```
+
+This creates two files in `my_experiment/`:
+
+- `postprocess.tsv` — tracking file with one row per (postprocess, combo) combination and a `status` column (`new`, `rerun`, or `done`)
+- `postprocess.yaml` — base postprocessing config (all args except combo axes), used by the generated commands
+
+**4. Get the commands to run:**
+
+```bash
+# Print all pending commands and write a bash script
+python ibd_sims/postprocess_experiment.py commands yaml_files/postprocess_experiment.yaml
+
+# With --no-wait to fire-and-forget Slurm job submission
+python ibd_sims/postprocess_experiment.py commands yaml_files/postprocess_experiment.yaml --no-wait
+```
+
+This prints one `python run.py postprocess` command per (simulation run × postprocess combo) pair and writes `my_experiment/postprocess_scripts/run.sh`. Only rows with `status` of `new` or `rerun` are included.
+
+By default, running the bash script serialises execution — each command completes before the next starts. Pass `--no-wait` if you want all Slurm jobs submitted at once without waiting.
+
 ## YAML configuration
 
 Each simulation is configured via a YAML file with two sections: simulation parameters at the top level, and post-processing module blocks below.
@@ -451,6 +531,7 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 ```
 ├── run.py                    # single entry point (simulate / postprocess / plot)
 ├── experiment.py             # experiment manager (plan and track batches of simulations)
+├── ibd_sims/postprocess_experiment.py  # postprocessing experiment manager (batch post-processing across simulations)
 ├── setup.yaml                # machine-specific path configuration
 ├── yaml_files/               # per-experiment simulation configs
 └── ibd_sims/                 # pipeline source code
