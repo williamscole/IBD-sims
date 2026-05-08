@@ -254,7 +254,7 @@ def postprocess(config_or_args, n_iter=None, iter_n=None, path=None, wait=True):
 
     processors = []
     for key in config.analyses:
-        module_name = getattr(config, key).path.replace(".py", "")
+        module_name = getattr(config, key).path.replace(".py", "").replace("/", ".")
         class_name = getattr(config, key).object
         mod = importlib.import_module(module_name)
         cls = getattr(mod, class_name)
