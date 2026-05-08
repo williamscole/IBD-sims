@@ -358,7 +358,7 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
             )
         else:
             executor.update_parameters(
-                mem=args["gb"] * 1024,
+                mem=args["gb"] * 1024 * sim_workers,
                 time=math.ceil(sim_timeout * end_chr / sim_workers),
                 cpus_per_task=sim_workers,
             )
