@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 from pathlib import Path
-
+import sys
 
 def _load_ibdne_file(ne_file: Path) -> pd.DataFrame:
     """Parse an IBDNe .ne output file into a DataFrame.
@@ -171,3 +171,15 @@ def load_experiment_results(exp_dir):
         hapne_df = hapne_df.merge(pp_args["hapne_ibd"], on="rep", how="left")
 
     return {"ibdne": ibdne_df, "hapne_ibd": hapne_df}
+
+
+def main():
+
+    exp_dir = sys.argv[1]
+
+    dfs = load_experiment_results(exp_dir)
+
+    import pdb; pdb.set_trace()
+
+if __name__ == "__main__":
+    main()
