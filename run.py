@@ -19,6 +19,38 @@ def cmd_simulate(args):
     run(args.yaml, args.local, args.workers, overrides=args.set, wait=not args.no_wait, max_n_slurm_jobs=args.max_jobs)
 
 
+def _ensure_concat(config):
+    """Concatenate per-chromosome files for any iterations not yet concatenated."""
+    from simulate import (concat_ibd_files, concat_map_files, concat_vcf,
+                          remove_ibd_chr_files, remove_vcf_chr_files, remove_map_chr_files)
+    from concat_tmrca import concat_tmrca
+    from filter_ibd import write_samples
+
+    path = config.path
+    n_iter = config.n_iter
+    end_chr = config.end_chr
+    keep_all_files = getattr(config, "keep_all_files", False)
+    samples = getattr(config, "samples", None)
+
+    for iter_n in range(1, n_iter + 1):
+        prefix = f"{path}/iter{iter_n}"
+        if not os.path.exists(f"{prefix}.ibd.gz"):
+            print(f"Concatenating iter {iter_n}...")
+            concat_ibd_files(prefix, end_chr)
+            concat_map_files(prefix, end_chr)
+            if not os.path.exists(f"{prefix}.tmrca.gz"):
+                concat_tmrca(path, iter_n, end_chr)
+            if keep_all_files:
+                concat_vcf(prefix, end_chr)
+                concat_ibd_files(prefix, end_chr, hbd=True)
+            if samples:
+                write_samples(f"{prefix}.ibd.gz", samples)
+            remove_ibd_chr_files(prefix, end_chr, hbd=False)
+            remove_ibd_chr_files(prefix, end_chr, hbd=True)
+            remove_vcf_chr_files(prefix, end_chr)
+            remove_map_chr_files(prefix, end_chr)
+
+
 def cmd_postprocess(args):
     from post_process import AnalysisConfig, postprocess
 
@@ -31,6 +63,7 @@ def cmd_postprocess(args):
         sys.exit(f"Error: input not found: {args.input}")
 
     config = AnalysisConfig.from_yaml(yaml_file, overrides=args.set)
+    _ensure_concat(config)
     postprocess(config, n_iter=config.n_iter, path=config.path, wait=not args.no_wait)
 
 
