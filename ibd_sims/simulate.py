@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import math
 import os
 import re
 import sys
@@ -165,20 +166,27 @@ def run_simulation_iter(path, iter_n):
 
     args = load_args(path)
     end_chr = args["end_chr"]
+    sim_workers = args.get("sim_workers", 1)
     prefix = f"{path}/iter{iter_n}"
 
-    print(f"[iter {iter_n}] starting: end_chr={end_chr}")
-    for chrom in range(1, end_chr + 1):
-        if is_sim_complete(path, iter_n, chrom):
-            print(f"[iter {iter_n}] chr {chrom}: already complete, skipping")
-            continue
-        print(f"[iter {iter_n}] chr {chrom}: simulating...")
-        p = Process(target=run_simulation, args=(path, iter_n, chrom))
-        p.start()
-        p.join()
-        if p.exitcode != 0:
-            raise RuntimeError(f"Simulation failed for iter {iter_n} chr {chrom} (exit code {p.exitcode})")
-        print(f"[iter {iter_n}] chr {chrom}: done")
+    chroms_to_run = [c for c in range(1, end_chr + 1) if not is_sim_complete(path, iter_n, c)]
+    skipped = end_chr - len(chroms_to_run)
+    print(f"[iter {iter_n}] starting: end_chr={end_chr}, sim_workers={sim_workers}, "
+          f"to simulate={len(chroms_to_run)}, skipped={skipped}")
+
+    for i in range(0, len(chroms_to_run), sim_workers):
+        batch = chroms_to_run[i:i + sim_workers]
+        procs = []
+        for chrom in batch:
+            print(f"[iter {iter_n}] chr {chrom}: simulating...")
+            p = Process(target=run_simulation, args=(path, iter_n, chrom))
+            p.start()
+            procs.append((chrom, p))
+        for chrom, p in procs:
+            p.join()
+            if p.exitcode != 0:
+                raise RuntimeError(f"Simulation failed for iter {iter_n} chr {chrom} (exit code {p.exitcode})")
+            print(f"[iter {iter_n}] chr {chrom}: done")
 
     print(f"[iter {iter_n}] concatenating outputs...")
     concat_ibd_files(prefix, end_chr)
@@ -306,6 +314,7 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
     end_chr = args["end_chr"]
     pedigree_mode = args.get("pedigree") and args["pedigree"].get("pedigree_mode", False)
     sim_timeout = args["sim_min"]
+    sim_workers = args.get("sim_workers", 1)
     pp_timeout = args.get("ibdne", {}).get("time_min") or args.get("time_min", 120)
 
     # Set up executor
@@ -350,8 +359,8 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
         else:
             executor.update_parameters(
                 mem=args["gb"] * 1024,
-                time=sim_timeout * end_chr,
-                cpus_per_task=1,
+                time=math.ceil(sim_timeout * end_chr / sim_workers),
+                cpus_per_task=sim_workers,
             )
 
     sim_jobs = {}  # {iter_n: [job, ...]}
