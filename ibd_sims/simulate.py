@@ -253,7 +253,7 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
         executor = submitit.LocalExecutor(folder=f"{path}/slurm")
     else:
         executor = submitit.SlurmExecutor(folder=f"{path}/slurm")
-        executor.update_parameters(use_srun=False)
+        executor.update_parameters(use_srun=False, additional_parameters={"export": "ALL"})
 
     # ── Phase 1: Pedigree creation ────────────────────────────────────────────
     if pedigree_mode and not args["pedigree"].get("pedigree_file"):

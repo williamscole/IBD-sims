@@ -208,6 +208,7 @@ class PostProcessor(ABC):
             time=self._get_resource("time_min"),
             cpus_per_task=self._get_resource("workers"),
             use_srun=False,
+            additional_parameters={"export": "ALL"},
         )
         iters = list(range(1, self.n_iter + 1))
         return executor.map_array(self._single_iter, iters)
