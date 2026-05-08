@@ -54,6 +54,20 @@ def _sacct_state(job_id):
     return lines[0] if lines else "UNKNOWN"
 
 
+def _release_if_held(job_id):
+    """Check squeue; if the job is held, release it and return True."""
+    result = subprocess.run(
+        ["squeue", "--job", str(job_id), "--format=%r", "--noheader"],
+        capture_output=True, text=True,
+    )
+    reason = result.stdout.strip()
+    if reason and "held" in reason.lower():
+        subprocess.run(["scontrol", "release", str(job_id)], capture_output=True)
+        print(f"Auto-released held job {job_id} (reason: {reason})")
+        return True
+    return False
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def load_args(path):
@@ -102,7 +116,7 @@ def is_post_complete(path, iter_n):
 
 
 def wait_for_jobs(jobs, path=None, end_chr=None):
-    """Poll jobs until all finish. Return list of failed jobs."""
+    """Poll jobs until all finish. Auto-releases held jobs. Return list of failed jobs."""
     pending = list(jobs)
     failed = []
     while pending:
@@ -115,6 +129,7 @@ def wait_for_jobs(jobs, path=None, end_chr=None):
                 print(f"Job {job.job_id} terminated with state {state}")
                 failed.append(job)
             else:
+                _release_if_held(job.job_id)
                 still_pending.append(job)
         pending = still_pending
         if pending:

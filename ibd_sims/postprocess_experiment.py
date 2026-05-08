@@ -175,7 +175,8 @@ def postprocess_commands(yaml_file, no_wait=False):
                f"--set post_process={name}"]
 
         for arg in row["args"].split(","):
-            cmd.append(f"--set {name}.{arg}={row[arg]}")
+            val = "null" if pd.isna(row[arg]) else row[arg]
+            cmd.append(f"--set {name}.{arg}={val}")
 
         for run in exp_list:
             flag = " --no-wait" if no_wait else ""
@@ -271,9 +272,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-    """
-    Questions:
-    
-    1. How does the current code deal with --set hapne_ibd.filter=nan
-    2. Can we add an option to use a yaml to override or add to an existing yaml? Like override_yaml is trying to do
-    """
