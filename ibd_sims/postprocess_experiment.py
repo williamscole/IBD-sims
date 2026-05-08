@@ -153,37 +153,72 @@ def postprocess_commands(yaml_file):
 
     with open(exp_dir / "yaml_files/yaml_files.txt", "r") as yfs:
         exp_list = [i.strip().replace(".yaml", "") for i in yfs.readlines()]
-        exp_list = ["hehe", "haha"]
 
     tracking_file = exp_dir / "postprocess.tsv"
 
-    if tracking_file.exists():
-        tracking_df = pd.read_csv(tracking_file, sep="\t")
-    else:
-        # exit
-        print("Need to init") # change to more informative msg
+    if not tracking_file.exists():
+        print("postprocess.tsv not found — run 'init' first.")
+        return
 
+    tracking_df = pd.read_csv(tracking_file, sep="\t")
     to_do_df = tracking_df[tracking_df.status.isin(["new", "rerun"])]
 
-    base_cmd = f"python blah blah"
+    base_cmd = "python run.py postprocess"
     for _, row in to_do_df.iterrows():
 
         name = row["name"]
-        
+
         cmd = [f"--set override_yaml={exp_dir}/postprocess.yaml",
-               f"--set postprocess={name}"]
+               f"--set post_process={name}"]
 
         for arg in row["args"].split(","):
             cmd.append(f"--set {name}.{arg}={row[arg]}")
 
         for run in exp_list:
-            exp_cmd = [f"{run}/args.yaml"]
-            print(" ".join([base_cmd] + exp_cmd + cmd))
+            print(" ".join([base_cmd, str(exp_dir / run)] + cmd))
 
-    # TODO: write to a similar bash script as the actual experiment manager that includes all the commands
+def print_postprocess_summary(yaml_dict):
+    """Print a human-readable overview of the postprocess plan without creating anything."""
+
+    exp_dir = yaml_dict.get("experiment_directory", "unknown")
+
+    if isinstance(yaml_dict["postprocess"], str):
+        postprocess_names = yaml_dict["postprocess"].split(",")
+    else:
+        postprocess_names = yaml_dict["postprocess"]
+
+    postprocess_runs = process_yaml_dict(yaml_dict)
+
+    print(f"\nExperiment directory: {exp_dir}")
+    print("=" * 50)
+
+    total_runs = 0
+    for name in postprocess_names:
+        pp = yaml_dict.get(name, {})
+        combo_args = pp.get("combo_args", {})
+        add_combos = pp.get("add_combo", {})
+        ignore_combos = pp.get("ignore_combo", {})
+
+        n_runs = len(postprocess_runs.get(name, []))
+        total_runs += n_runs
+
+        print(f"\n  [{name}]  ({n_runs} runs)")
+        if combo_args:
+            print(f"    combo_args:")
+            for arg, vals in combo_args.items():
+                print(f"      {arg}: {vals}")
+        if add_combos:
+            print(f"    add_combo: {list(add_combos.keys())} ({len(add_combos)} additional)")
+        if ignore_combos:
+            print(f"    ignore_combo: {list(ignore_combos.keys())} ({len(ignore_combos)} removed)")
+
+    print(f"\nTotal postprocess runs: {total_runs}")
+    print()
+
 
 def postprocess_describe(yaml_file):
-    pass
+    exp_args = load_yaml(yaml_file)
+    print_postprocess_summary(exp_args)
 
 
 
@@ -215,8 +250,11 @@ def main():
     if args.command == "init":
         postprocess_init(args.yaml)
 
-    if args.command == "commands":
+    elif args.command == "commands":
         postprocess_commands(args.yaml)
+
+    elif args.command == "describe":
+        postprocess_describe(args.yaml)
 
 if __name__ == "__main__":
     main()

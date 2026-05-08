@@ -59,6 +59,28 @@ class AnalysisConfig:
         with open(str(yaml_path), 'r') as file:
             args = yaml.safe_load(file)
 
+        # Extract override_yaml from overrides before applying the rest,
+        # so that --set overrides still take final precedence over it.
+        override_yaml_path = None
+        if overrides:
+            clean_overrides = []
+            for item_list in overrides:
+                cleaned = []
+                for item in item_list:
+                    if item.startswith("override_yaml="):
+                        override_yaml_path = item.split("=", 1)[1].strip()
+                    else:
+                        cleaned.append(item)
+                if cleaned:
+                    clean_overrides.append(cleaned)
+            overrides = clean_overrides or None
+
+        # Merge override yaml into base args (before --set so --set wins)
+        if override_yaml_path:
+            with open(override_yaml_path, 'r') as f:
+                override_args = yaml.safe_load(f)
+            args.update(override_args)
+
         if overrides:
             args = apply_overrides(args, overrides)
 
