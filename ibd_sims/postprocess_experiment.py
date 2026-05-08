@@ -3,6 +3,8 @@ import pandas as pd
 import yaml
 from pathlib import Path
 
+from experiment import write_bash
+
 def load_yaml(yaml_file):
     with open(yaml_file, "r") as yamlf:
         exp_args = yaml.safe_load(yamlf)
@@ -164,6 +166,7 @@ def postprocess_commands(yaml_file):
     to_do_df = tracking_df[tracking_df.status.isin(["new", "rerun"])]
 
     base_cmd = "python run.py postprocess"
+    cmds = []
     for _, row in to_do_df.iterrows():
 
         name = row["name"]
@@ -175,7 +178,13 @@ def postprocess_commands(yaml_file):
             cmd.append(f"--set {name}.{arg}={row[arg]}")
 
         for run in exp_list:
-            print(" ".join([base_cmd, str(exp_dir / run)] + cmd))
+            full_cmd = " ".join([base_cmd, str(exp_dir / run)] + cmd)
+            print(full_cmd)
+            cmds.append(full_cmd)
+
+    print("\n")
+    print("Run this bash script to run post-processing:")
+    write_bash(cmds, exp_dir / "postprocess_scripts")
 
 def print_postprocess_summary(yaml_dict):
     """Print a human-readable overview of the postprocess plan without creating anything."""
