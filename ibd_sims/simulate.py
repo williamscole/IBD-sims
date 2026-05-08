@@ -155,7 +155,8 @@ def run_simulation(path, iter_n, chrom):
 
 
 def run_simulation_iter(path, iter_n):
-    """Phase 2 (per-iter mode): simulate all chromosomes for one iteration sequentially.
+    """Phase 2 (per-iter mode): simulate all chromosomes for one iteration sequentially,
+    then concatenate per-chromosome outputs into iteration-level files.
 
     Each chromosome is run in a subprocess so that any sys.exit() calls inside
     sim() only terminate the subprocess rather than the whole job.
@@ -164,6 +165,8 @@ def run_simulation_iter(path, iter_n):
 
     args = load_args(path)
     end_chr = args["end_chr"]
+    prefix = f"{path}/iter{iter_n}"
+
     print(f"[iter {iter_n}] starting: end_chr={end_chr}")
     for chrom in range(1, end_chr + 1):
         if is_sim_complete(path, iter_n, chrom):
@@ -176,6 +179,23 @@ def run_simulation_iter(path, iter_n):
         if p.exitcode != 0:
             raise RuntimeError(f"Simulation failed for iter {iter_n} chr {chrom} (exit code {p.exitcode})")
         print(f"[iter {iter_n}] chr {chrom}: done")
+
+    print(f"[iter {iter_n}] concatenating outputs...")
+    concat_ibd_files(prefix, end_chr)
+    concat_map_files(prefix, end_chr)
+    if not os.path.exists(f"{prefix}.tmrca.gz"):
+        concat_tmrca(path, iter_n, end_chr)
+    if args.get("keep_all_files", False):
+        concat_vcf(prefix, end_chr)
+        concat_ibd_files(prefix, end_chr, hbd=True)
+    write_samples(f"{prefix}.ibd.gz", args["samples"])
+
+    print(f"[iter {iter_n}] cleaning up per-chromosome files...")
+    remove_ibd_chr_files(prefix, end_chr, hbd=False)
+    remove_ibd_chr_files(prefix, end_chr, hbd=True)
+    remove_vcf_chr_files(prefix, end_chr)
+    remove_map_chr_files(prefix, end_chr)
+    print(f"[iter {iter_n}] done")
 
 def concat_ibd_files(prefix, end_chr, hbd: bool = False):
     ext = "hbd" if hbd else "ibd"
