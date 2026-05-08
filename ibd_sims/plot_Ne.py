@@ -1,24 +1,17 @@
 """
-plot.py — plot IBDNe and/or HapNe Ne estimates against the truth.
+plot_Ne.py — plot IBDNe and/or HapNe-IBD Ne estimates against the truth.
 
 Usage
 -----
-# Plot specific IBDNe and HapNe-IBD subdirectory runs:
-python plot.py path/to/run --ibdne 001 003 --hapne_ibd 002
+python plot_Ne.py path/to/experiment_dir
 
-# Plot only HapNe-LD runs:
-python plot.py path/to/run --hapne_ld 001 002
-
-# Mix everything:
-python plot.py path/to/run --ibdne 001 --hapne_ibd 001 --hapne_ld 001
-
-The script reads args.yaml from each numbered subdirectory to build line labels,
-and reads the top-level args.yaml to derive the truth Ne trajectory.
+Loads all results via load_experiment_results() and produces one Ne_plot.png
+per demographic scenario found in the experiment directory.
 """
 
 import argparse
-import os
 import sys
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,136 +20,33 @@ import seaborn as sns
 import yaml
 
 from simulations import DemographicSetup
+from analyze_experiment import load_experiment_results
 
 BAND_THRESHOLD = 10   # show percentile band only when n_iters > this
 
 
 # ── Label helpers ─────────────────────────────────────────────────────────────
 
-def _build_base_label(yargs: dict) -> str:
-    """Build a multiline base label from simulation args.yaml fields."""
-    parts = []
+# Fixed columns in each method's DataFrame — everything else is a postprocess arg.
+_IBDNE_FIXED_COLS  = {"demo", "rep", "iter", "gen", "ne", "lwr_95ci", "upr_95ci"}
+_HAPNE_FIXED_COLS  = {"demo", "rep", "iter", "time",
+                      "ne_q025", "ne_q25", "ne_q50", "ne_q75", "ne_q975"}
 
-    custom_demo = (yargs.get("custom_demo") or {}).get("object")
-    custom_sim  = (yargs.get("custom_sim")  or {}).get("object")
-
-    if custom_demo:
-        parts.append(custom_demo)
-    elif custom_sim:
-        parts.append(custom_sim)
-
-    n = yargs.get("samples")
-    if n:
-        parts.append(f"n={n}")
-
-    ped = yargs.get("pedigree") or {}
-    if ped.get("pedigree_mode"):
-        mating = ped.get("mating", "di")
-        parts.append(f"DTWF ({mating})")
-    else:
-        parts.append("coalescent")
-
-    return "\n".join(parts)
+_METHOD_DISPLAY = {"ibdne": "IBDNe", "hapne_ibd": "HapNe-IBD"}
 
 
-def _ibdne_label(subdir_yargs: dict) -> str:
-    """Label for an IBDNe line: base label + filter info.
-
-    PostProcessor.dump_config() flattens the sub-config to the top level, so
-    the subdir args.yaml has 'filter' and 'filtersamples' as top-level keys.
-    """
-    base = _build_base_label(subdir_yargs)
-
-    # filter lives inside the ibdne: block in the subdir args.yaml
-    ibdne_block = subdir_yargs.get("ibdne") or {}
-    filter_val = ibdne_block.get("filter")
-    filtersamples = ibdne_block.get("filtersamples") or subdir_yargs.get("filtersamples", False)
-
-    if filter_val and str(filter_val) not in ("null", "", "none", "None", "unfiltered"):
-        filter_str = str(filter_val)
-    elif filtersamples:
-        filter_str = "filtersamples"
-    else:
-        filter_str = "unfiltered"
-
-    return f"{base}\nIBDNe | {filter_str}"
+def _postprocess_suffix(row: pd.Series, fixed_cols: set) -> str:
+    """Return a label fragment from any postprocessing arg columns present."""
+    extra = {k: v for k, v in row.items()
+             if k not in fixed_cols and pd.notna(v)}
+    return " | ".join(f"{k}={v}" for k, v in extra.items()) if extra else "unfiltered"
 
 
-def _hapne_label(subdir_yargs: dict, tool: str) -> str:
-    """Label for a HapNe line: base label + tool name + filter info."""
-    base = _build_base_label(subdir_yargs)
-
-    tool_cfg = subdir_yargs.get(tool) or {}
-    filter_val = tool_cfg.get("filter") or subdir_yargs.get("filter") or "unfiltered"
-    if filter_val in ("null", "", None):
-        filter_val = "unfiltered"
-
-    tool_display = {"hapne_ibd": "HapNe-IBD", "hapne_ld": "HapNe-LD"}.get(tool, tool)
-    return f"{base}\n{tool_display} | {filter_val}"
-
-
-# ── Data loaders ──────────────────────────────────────────────────────────────
-
-def _load_ibdne_run(subdir: str) -> tuple[str, list[pd.DataFrame]]:
-    """
-    Load IBDNe results from a numbered subdirectory (e.g. ibdne/001/).
-
-    Returns (label, list_of_dataframes). Each DataFrame has GEN and NE columns.
-    """
-    yargs_path = os.path.join(subdir, "args.yaml")
-    if not os.path.exists(yargs_path):
-        raise FileNotFoundError(f"No args.yaml found in {subdir}")
-
-    yargs = yaml.safe_load(open(yargs_path))
-    n_iter = yargs.get("iter") or yargs.get("n_iter")
-    if n_iter is None:
-        raise ValueError(f"Could not determine iter count from {yargs_path}")
-
-    dfs = []
-    for i in range(1, n_iter + 1):
-        ne_file = os.path.join(subdir, f"iter{i}.ne")
-        if os.path.exists(ne_file):
-            dfs.append(pd.read_csv(ne_file, sep="\t"))
-        else:
-            print(f"  [IBDNe] Missing {ne_file}, skipping iteration {i}")
-
-    label = _ibdne_label(yargs)
-    return label, dfs
-
-
-def _load_hapne_run(subdir: str, tool: str) -> tuple[str, list[pd.DataFrame]]:
-    """
-    Load HapNe-IBD or HapNe-LD results from a numbered subdirectory.
-
-    HapNe output lives at: {subdir}/iter{i}/HapNe/hapne.csv
-    Columns: TIME, Q0.025, Q0.25, Q0.5, Q0.75, Q0.975
-
-    Returns (label, list_of_dataframes). Each DataFrame is normalised to
-    have GEN (= TIME) and NE (= Q0.5) columns so it works with the
-    shared plotting logic; the full quantile columns are preserved.
-    """
-    yargs_path = os.path.join(subdir, "args.yaml")
-    if not os.path.exists(yargs_path):
-        raise FileNotFoundError(f"No args.yaml found in {subdir}")
-
-    yargs = yaml.safe_load(open(yargs_path))
-    n_iter = yargs.get("iter") or yargs.get("n_iter")
-    if n_iter is None:
-        raise ValueError(f"Could not determine iter count from {yargs_path}")
-
-    dfs = []
-    for i in range(1, n_iter + 1):
-        hapne_file = os.path.join(subdir, f"iter{i}", "HapNe", "hapne.csv")
-        if os.path.exists(hapne_file):
-            df = pd.read_csv(hapne_file)
-            # Normalise column names for shared plotting code
-            df = df.rename(columns={"TIME": "GEN", "Q0.5": "NE"})
-            dfs.append(df)
-        else:
-            print(f"  [{tool}] Missing {hapne_file}, skipping iteration {i}")
-
-    label = _hapne_label(yargs, tool)
-    return label, dfs
+def _make_label(demo: str, method: str, rep: str,
+                row: pd.Series, fixed_cols: set) -> str:
+    method_display = _METHOD_DISPLAY.get(method, method)
+    pp = _postprocess_suffix(row, fixed_cols)
+    return f"{demo}\n{method_display} | rep={rep} | {pp}"
 
 
 # ── Truth ─────────────────────────────────────────────────────────────────────
@@ -295,100 +185,115 @@ def plot_ne_estimates(
     return fig, ax
 
 
+# ── Data conversion ───────────────────────────────────────────────────────────
+
+def _results_to_data_dict(
+    ibdne_df: pd.DataFrame,
+    hapne_df: pd.DataFrame,
+    demo: str,
+) -> dict[str, list[pd.DataFrame]]:
+    """
+    Convert the flat DataFrames from load_experiment_results into the
+    {label: [per-iter DataFrame, ...]} format expected by plot_ne_estimates.
+
+    Each (method, rep) combination becomes one label; iters become the list.
+    Columns are normalised to GEN and NE for the shared plotting logic.
+    """
+    data_dict: dict[str, list[pd.DataFrame]] = {}
+
+    # IBDNe
+    if not ibdne_df.empty:
+        subset = ibdne_df[ibdne_df["demo"] == demo]
+        for rep, rep_group in subset.groupby("rep"):
+            first_row = rep_group.iloc[0]
+            label = _make_label(demo, "ibdne", rep, first_row, _IBDNE_FIXED_COLS)
+            dfs = [
+                iter_df[["gen", "ne"]]
+                    .rename(columns={"gen": "GEN", "ne": "NE"})
+                    .reset_index(drop=True)
+                for _, iter_df in rep_group.groupby("iter")
+            ]
+            data_dict[label] = dfs
+            print(f"  [ibdne/rep={rep}] {len(dfs)} iter(s) for demo '{demo}'")
+
+    # HapNe-IBD
+    if not hapne_df.empty:
+        subset = hapne_df[hapne_df["demo"] == demo]
+        for rep, rep_group in subset.groupby("rep"):
+            first_row = rep_group.iloc[0]
+            label = _make_label(demo, "hapne_ibd", rep, first_row, _HAPNE_FIXED_COLS)
+            dfs = [
+                iter_df[["time", "ne_q50"]]
+                    .rename(columns={"time": "GEN", "ne_q50": "NE"})
+                    .reset_index(drop=True)
+                for _, iter_df in rep_group.groupby("iter")
+            ]
+            data_dict[label] = dfs
+            print(f"  [hapne_ibd/rep={rep}] {len(dfs)} iter(s) for demo '{demo}'")
+
+    return data_dict
+
+
 # ── Main entry ────────────────────────────────────────────────────────────────
 
-def plot(
-    path: str,
-    ibdne: list[str] | None = None,
-    hapne_ibd: list[str] | None = None,
-    hapne_ld: list[str] | None = None,
-    vlines: bool = True,
-) -> None:
+def plot(exp_dir: str, vlines: bool = True) -> None:
     """
-    Build and save the Ne plot.
+    Load all Ne estimates from an experiment directory and produce one
+    Ne_plot.png per demographic scenario.
 
     Parameters
     ----------
-    path      : top-level run directory (contains args.yaml)
-    ibdne     : list of subdirectory numbers to plot from ibdne/, e.g. ["001", "003"]
-    hapne_ibd : list of subdirectory numbers to plot from hapne_ibd/
-    hapne_ld  : list of subdirectory numbers to plot from hapne_ld/
-    vlines    : draw log2-Ne vertical reference lines (only when truth is constant)
+    exp_dir : path to the experiment directory (passed to load_experiment_results)
+    vlines  : draw log2-Ne vertical reference lines (only when truth is constant)
     """
-    top_yargs_path = os.path.join(path, "args.yaml")
-    if not os.path.exists(top_yargs_path):
-        print(f"No args.yaml found at {path}")
+    exp_dir = Path(exp_dir)
+    results = load_experiment_results(exp_dir)
+    ibdne_df  = results["ibdne"]
+    hapne_df  = results["hapne_ibd"]
+
+    demos = set()
+    if not ibdne_df.empty:
+        demos |= set(ibdne_df["demo"].unique())
+    if not hapne_df.empty:
+        demos |= set(hapne_df["demo"].unique())
+
+    if not demos:
+        print("No results found.")
         return
 
-    top_yargs = yaml.safe_load(open(top_yargs_path))
-    truth_df = get_truth(top_yargs)
+    for demo in sorted(demos):
+        print(f"\nPlotting demo: {demo}")
+        data_dict = _results_to_data_dict(ibdne_df, hapne_df, demo)
 
-    data_dict: dict[str, list[pd.DataFrame]] = {}
-
-    tool_specs = [
-        ("ibdne",     ibdne,     _load_ibdne_run),
-        ("hapne_ibd", hapne_ibd, lambda s: _load_hapne_run(s, "hapne_ibd")),
-        ("hapne_ld",  hapne_ld,  lambda s: _load_hapne_run(s, "hapne_ld")),
-    ]
-
-    for tool_name, run_ids, loader in tool_specs:
-        if not run_ids:
+        if not data_dict:
+            print(f"  No data for '{demo}', skipping.")
             continue
-        for run_id in run_ids:
-            subdir = os.path.join(path, tool_name, run_id)
-            if not os.path.isdir(subdir):
-                print(f"  [{tool_name}] Subdirectory not found: {subdir}")
-                continue
-            try:
-                label, dfs = loader(subdir)
-            except Exception as e:
-                print(f"  [{tool_name}/{run_id}] Failed to load: {e}")
-                continue
 
-            if not dfs:
-                print(f"  [{tool_name}/{run_id}] No data found, skipping.")
-                continue
+        # Load truth from the demo's args.yaml
+        demo_args_path = exp_dir / demo / "args.yaml"
+        truth_df = None
+        if demo_args_path.exists():
+            yargs = yaml.safe_load(open(demo_args_path))
+            truth_df = get_truth(yargs)
+        else:
+            print(f"  [truth] No args.yaml found at {demo_args_path}")
 
-            # Deduplicate labels (shouldn't happen, but just in case)
-            unique_label = label
-            suffix = 1
-            while unique_label in data_dict:
-                unique_label = f"{label} ({suffix})"
-                suffix += 1
-
-            data_dict[unique_label] = dfs
-            print(f"  [{tool_name}/{run_id}] Loaded {len(dfs)} iteration(s): '{label}'")
-
-    if not data_dict:
-        print("No data to plot.")
-        return
-
-    fig, ax = plot_ne_estimates(data_dict, truth_df=truth_df, vlines=vlines)
-    out_path = os.path.join(path, "Ne_plot.png")
-    plt.savefig(out_path, dpi=600)
-    print(f"Saved: {out_path}")
-    plt.close(fig)
+        fig, ax = plot_ne_estimates(data_dict, truth_df=truth_df, vlines=vlines)
+        out_path = exp_dir / f"{demo}_Ne_plot.png"
+        plt.savefig(out_path, dpi=600)
+        print(f"  Saved: {out_path}")
+        plt.close(fig)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def _parse_args():
     parser = argparse.ArgumentParser(
-        description="Plot IBDNe / HapNe Ne estimates.",
+        description="Plot IBDNe / HapNe-IBD Ne estimates for an experiment.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python plot.py path/to/run --ibdne 001 003 --hapne_ibd 001
-  python plot.py path/to/run --hapne_ld 001 002
-        """,
+        epilog="Example:\n  python plot_Ne.py path/to/experiment_dir",
     )
-    parser.add_argument("path", help="Top-level run directory (contains args.yaml)")
-    parser.add_argument("--ibdne",     nargs="+", metavar="RUN", default=None,
-                        help="IBDNe subdirectory numbers to include (e.g. 001 003)")
-    parser.add_argument("--hapne_ibd", nargs="+", metavar="RUN", default=None,
-                        help="HapNe-IBD subdirectory numbers to include")
-    parser.add_argument("--hapne_ld",  nargs="+", metavar="RUN", default=None,
-                        help="HapNe-LD subdirectory numbers to include")
+    parser.add_argument("exp_dir", help="Experiment directory (passed to load_experiment_results)")
     parser.add_argument("--no-vlines", action="store_true", default=False,
                         help="Suppress log2-Ne vertical reference lines")
     return parser.parse_args()
@@ -396,10 +301,4 @@ Examples:
 
 if __name__ == "__main__":
     args = _parse_args()
-    plot(
-        path=args.path,
-        ibdne=args.ibdne,
-        hapne_ibd=args.hapne_ibd,
-        hapne_ld=args.hapne_ld,
-        vlines=not args.no_vlines,
-    )
+    plot(exp_dir=args.exp_dir, vlines=not args.no_vlines)
