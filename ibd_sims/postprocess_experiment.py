@@ -153,7 +153,12 @@ def postprocess_commands(yaml_file, no_wait=False):
 
     exp_dir = Path(exp_args["experiment_directory"])
 
-    with open(exp_dir / "yaml_files/yaml_files.txt", "r") as yfs:
+    yaml_files_txt = exp_dir / "yaml_files/yaml_files.txt"
+    if not yaml_files_txt.exists():
+        print("yaml_files/yaml_files.txt not found — run 'experiment.py init' first.")
+        return
+
+    with open(yaml_files_txt, "r") as yfs:
         exp_list = [i.strip().replace(".yaml", "") for i in yfs.readlines()]
 
     tracking_file = exp_dir / "postprocess.tsv"
