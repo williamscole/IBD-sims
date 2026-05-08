@@ -115,7 +115,11 @@ def load_experiment_results(exp_dir):
                     if not m:
                         continue
                     iter_num = int(m.group(1))
-                    df = _load_ibdne_file(ne_file)
+                    try:
+                        df = _load_ibdne_file(ne_file)
+                    except Exception as e:
+                        print(f"  [skip] could not load {ne_file}: {e}")
+                        continue
                     df.insert(0, "demo", demo)
                     df.insert(1, "rep", rep)
                     df.insert(2, "iter", iter_num)
@@ -138,8 +142,13 @@ def load_experiment_results(exp_dir):
                     iter_num = int(m.group(1))
                     hapne_csv = iter_dir / "HapNe" / "hapne.csv"
                     if not hapne_csv.exists():
+                        print(f"  [skip] not found: {hapne_csv}")
                         continue
-                    df = _load_hapne_file(hapne_csv)
+                    try:
+                        df = _load_hapne_file(hapne_csv)
+                    except Exception as e:
+                        print(f"  [skip] could not load {hapne_csv}: {e}")
+                        continue
                     df.insert(0, "demo", demo)
                     df.insert(1, "rep", rep)
                     df.insert(2, "iter", iter_num)
