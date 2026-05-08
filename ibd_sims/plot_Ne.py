@@ -78,89 +78,89 @@ _TOOL_PALETTES = {
 }
 _FALLBACK_PALETTE = sns.color_palette("deep", 20)
 
+OUTLIER_FACTOR = 100.0  # remove iters whose max NE exceeds this * median(max NE)
+
 
 def _tool_key(label: str) -> str:
     """Infer tool name from a line label for palette selection."""
     low = label.lower()
-    if "hapne-ibd" in low:
+    if "hapne-ibd" in low or "hapne_ibd" in low:
         return "hapne_ibd"
-    if "hapne-ld" in low:
+    if "hapne-ld" in low or "hapne_ld" in low:
         return "hapne_ld"
     return "ibdne"
 
 
-def plot_ne_estimates(
-    data_dict: dict,
-    truth_df: pd.DataFrame | None = None,
-    figsize: tuple = (12, 8),
-    log_scale: bool = True,
-    xlim: tuple = (0, 50),
-    vlines: bool = True,
-) -> tuple:
+def _filter_outlier_iters(
+    dfs: list[pd.DataFrame],
+    factor: float = OUTLIER_FACTOR,
+) -> list[pd.DataFrame]:
     """
-    Plot Ne estimates for one or more methods/runs.
+    Remove iterations whose max NE is more than `factor` times the median
+    max NE across all iterations.  Protects against numerical blow-ups
+    (e.g. IBDNe diverging on a single replicate) that would otherwise
+    dominate the mean.
+    """
+    if len(dfs) <= 1:
+        return dfs
+    max_nes = np.array([df["NE"].max() for df in dfs])
+    threshold = factor * np.median(max_nes)
+    kept = [df for df, m in zip(dfs, max_nes) if m <= threshold]
+    n_removed = len(dfs) - len(kept)
+    if n_removed:
+        print(f"    [outlier filter] Removed {n_removed}/{len(dfs)} iter(s) "
+              f"(max NE > {factor:.0f}x median)")
+    return kept if kept else dfs  # never drop everything
 
-    Parameters
-    ----------
-    data_dict : {label: [DataFrame, ...]}
-        Each DataFrame must have GEN and NE columns.
-        HapNe DataFrames may additionally have Q0.025/Q0.975 columns.
-    truth_df : DataFrame with GEN and NE columns, or None.
-    vlines : if True, draw the log2-Ne and 1.77*log2-Ne vertical reference
-             lines when the truth is a constant Ne.
-    """
-    fig, ax = plt.subplots(figsize=figsize)
+
+def _plot_panel(
+    ax,
+    panel_dict: dict,
+    common_parts: list[str],
+    palette_key: str,
+    truth_df: pd.DataFrame | None,
+    xlim: tuple,
+    log_scale: bool,
+    vlines: bool,
+) -> None:
+    """Plot one tool's data onto a single axes object."""
     line_styles = ["-", "--", "-.", ":"]
+    palette = _TOOL_PALETTES.get(palette_key, _FALLBACK_PALETTE)
 
-    # Assign colours per tool, cycling within each tool's palette
-    tool_counters: dict[str, int] = {}
-    line_colors: list = []
-    for label in data_dict:
-        tk = _tool_key(label)
-        idx = tool_counters.get(tk, 0)
-        palette = _TOOL_PALETTES.get(tk, _FALLBACK_PALETTE)
-        line_colors.append(palette[idx % len(palette)])
-        tool_counters[tk] = idx + 1
-
-    # Compute shared title from strings common to all labels
-    all_parts = [label.split("\n") for label in data_dict]
-    common = [p for p in all_parts[0] if all(p in parts for parts in all_parts[1:])]
-    plot_title = " | ".join(common) if common else ""
-
-    for i, ((label, dfs), color) in enumerate(zip(data_dict.items(), line_colors)):
+    for i, (label, dfs) in enumerate(panel_dict.items()):
         if not dfs:
             print(f"  No data for '{label}', skipping.")
             continue
 
+        dfs = _filter_outlier_iters(dfs)
+
+        color     = palette[i % len(palette)]
         linestyle = line_styles[i % len(line_styles)]
-        # Strip common parts from the per-line legend label
-        legend_parts = [p for p in label.split("\n") if p not in common]
+
+        # Strip parts shared across all lines (already in the panel title)
+        legend_parts = [p for p in label.split("\n") if p not in common_parts]
         legend_label = "\n".join(legend_parts) if legend_parts else label
 
+        # Align iteration lengths and stack
         ne_arrays = [df["NE"].values for df in dfs]
-
-        # Align lengths (HapNe runs may differ in GEN extent across iters)
-        min_len = min(len(a) for a in ne_arrays)
+        min_len   = min(len(a) for a in ne_arrays)
         ne_arrays = [a[:min_len] for a in ne_arrays]
         generations = dfs[0]["GEN"].values[:min_len]
+        ne_stack  = np.array(ne_arrays)   # (n_iter, n_gen)
 
-        ne_stack = np.array(ne_arrays)  # shape: (n_iter, n_gen)
         mean = np.mean(ne_stack, axis=0)
-
         ax.plot(generations, mean, label=legend_label, color=color,
                 linewidth=2.5, linestyle=linestyle)
 
-        n_iter = len(dfs)
-        if n_iter > BAND_THRESHOLD:
-            p5  = np.percentile(ne_stack, 5,  axis=0)
+        if len(dfs) > 1:
+            p5  = np.percentile(ne_stack,  5, axis=0)
             p95 = np.percentile(ne_stack, 95, axis=0)
             ax.fill_between(generations, p5, p95, color=color, alpha=0.15)
 
     # Truth
     if truth_df is not None:
         ax.plot(truth_df["GEN"], truth_df["NE"],
-                color="black", linestyle="--",
-                label="Truth", linewidth=3.5)
+                color="black", linestyle="--", label="Truth", linewidth=3.5)
 
         if vlines and np.std(truth_df["NE"]) == 0:
             ne0 = truth_df.iloc[0]["NE"]
@@ -174,15 +174,50 @@ def plot_ne_estimates(
     ax.set_xlim(*xlim)
     if log_scale:
         ax.set_yscale("log")
-
-    ax.set_title(plot_title, pad=20)
     ax.set_xlabel("Generation")
-    ax.set_ylabel("Effective Population Size")
     ax.grid(True, alpha=0.2)
     ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left",
-               borderaxespad=0., framealpha=1.0)
+              borderaxespad=0., framealpha=1.0)
+
+
+def plot_ne_estimates(
+    data_dict: dict,
+    truth_df: pd.DataFrame | None = None,
+    figsize: tuple = (18, 7),
+    log_scale: bool = True,
+    xlim: tuple = (0, 50),
+    vlines: bool = True,
+) -> tuple:
+    """
+    Plot Ne estimates split into two panels (IBDNe | HapNe-IBD) with sharey=True.
+
+    Parameters
+    ----------
+    data_dict : {label: [DataFrame, ...]}
+        Each DataFrame must have GEN and NE columns.
+    truth_df  : DataFrame with GEN and NE columns, or None.
+    vlines    : draw log2-Ne vertical reference lines when truth is constant.
+    """
+    ibdne_dict = {l: d for l, d in data_dict.items() if _tool_key(l) == "ibdne"}
+    hapne_dict = {l: d for l, d in data_dict.items() if _tool_key(l) == "hapne_ibd"}
+
+    # Parts common to every label → use as suptitle, strip from legend entries
+    all_parts = [label.split("\n") for label in data_dict] if data_dict else [[]]
+    common = [p for p in all_parts[0]
+              if all(p in parts for parts in all_parts[1:])]
+
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, sharey=True, figsize=figsize)
+    fig.suptitle(" | ".join(common) if common else "", y=1.01)
+
+    _plot_panel(ax_left,  ibdne_dict, common, "ibdne",     truth_df, xlim, log_scale, vlines)
+    ax_left.set_title("IBDNe")
+    ax_left.set_ylabel("Effective Population Size")
+
+    _plot_panel(ax_right, hapne_dict, common, "hapne_ibd", truth_df, xlim, log_scale, vlines)
+    ax_right.set_title("HapNe-IBD")
+
     plt.tight_layout()
-    return fig, ax
+    return fig, (ax_left, ax_right)
 
 
 # ── Data conversion ───────────────────────────────────────────────────────────
