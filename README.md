@@ -553,6 +553,10 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 
 ## TODO
 
+- [ ] Add a global `--max-jobs` option to `experiment.py commands` that passes through to each generated `run.py simulate` command. Currently `--max-jobs` only limits jobs within a single simulation run, so with `--no-wait` (the default) an experiment with many simulations can submit more total Slurm jobs than the cluster's per-user queue limit.
+
+
+
 - [ ] Add *better* support for resumption of runs, e.g., re-running only some iterations.
 - [ ] Allow user to *not* provide hap-ibd path. Would default to exact IBD segments computed by `tskit`.
 - [ ] HapNe-LD currently is slow/does not work.

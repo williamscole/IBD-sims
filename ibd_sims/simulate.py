@@ -149,8 +149,17 @@ def run_pedigree(path, iter_n):
 
 
 def run_simulation(path, iter_n, chrom):
-    """Phase 2: simulate one (iteration, chromosome) pair."""
+    """Phase 2 (per-chr mode): simulate one (iteration, chromosome) pair."""
     sim(path, iter_n, chrom)
+
+
+def run_simulation_iter(path, iter_n):
+    """Phase 2 (per-iter mode): simulate all chromosomes for one iteration sequentially."""
+    args = load_args(path)
+    end_chr = args["end_chr"]
+    for chrom in range(1, end_chr + 1):
+        if not is_sim_complete(path, iter_n, chrom):
+            run_simulation(path, iter_n, chrom)
 
 def concat_ibd_files(prefix, end_chr, hbd: bool = False):
     ext = "hbd" if hbd else "ibd"
@@ -287,62 +296,87 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
             sys.exit(1)
 
     # ── Phase 2: Simulation ───────────────────────────────────────────────────
-    print("Submitting simulation jobs...")
+    per_chr_mode = n_iter < 3
+    mode_str = "per-chromosome" if per_chr_mode else "per-iteration"
+    print(f"Submitting simulation jobs ({mode_str} mode)...")
+
     if local:
-        executor.update_parameters(timeout_min=sim_timeout)
+        timeout = sim_timeout if per_chr_mode else sim_timeout * end_chr
+        executor.update_parameters(timeout_min=timeout)
     else:
-        executor.update_parameters(
-            mem=args["gb"] * 1024,
-            time=sim_timeout,
-            cpus_per_task=1,
-            array_parallelism=100
-        )
-
-    tasks = [
-        (iter_n, chrom)
-        for iter_n in range(1, n_iter + 1)
-        for chrom in range(1, end_chr + 1)
-        if not is_sim_complete(path, iter_n, chrom)
-    ]
-
-    sim_jobs = {}
-    if tasks:
-        if len(tasks) <= max_n_slurm_jobs:
-            jobs = executor.map_array(
-                run_simulation,
-                [path] * len(tasks),
-                [t[0] for t in tasks],
-                [t[1] for t in tasks],
+        if per_chr_mode:
+            executor.update_parameters(
+                mem=args["gb"] * 1024,
+                time=sim_timeout,
+                cpus_per_task=1,
+                array_parallelism=100,
             )
-            for (iter_n, chrom), job in zip(tasks, jobs):
-                sim_jobs.setdefault(iter_n, {})[chrom] = job
         else:
-            if not wait:
-                print(f"Warning: --no-wait ignored because {len(tasks)} tasks exceeds "
-                    f"max_n_slurm_jobs={max_n_slurm_jobs}. Batching required.")
-                wait = True
+            executor.update_parameters(
+                mem=args["gb"] * 1024,
+                time=sim_timeout * end_chr,
+                cpus_per_task=1,
+            )
 
-            n_iter_in_batch = max(1, max_n_slurm_jobs // 4 // end_chr)
-            n_tasks_in_batch = n_iter_in_batch * end_chr
-            batches = [tasks[i:i+n_tasks_in_batch] for i in range(0, len(tasks), n_tasks_in_batch)]
+    sim_jobs = {}  # {iter_n: [job, ...]}
 
-            print(f"Submitting {len(tasks)} tasks in {len(batches)} batches of "
-                f"{n_tasks_in_batch} ({n_iter_in_batch} iterations each)...")
-
-            for i, batch in enumerate(batches):
-                print(f"Submitting batch {i+1}/{len(batches)}...")
+    if per_chr_mode:
+        tasks = [
+            (iter_n, chrom)
+            for iter_n in range(1, n_iter + 1)
+            for chrom in range(1, end_chr + 1)
+            if not is_sim_complete(path, iter_n, chrom)
+        ]
+        if tasks:
+            if len(tasks) <= max_n_slurm_jobs:
                 jobs = executor.map_array(
                     run_simulation,
-                    [path] * len(batch),
-                    [t[0] for t in batch],
-                    [t[1] for t in batch],
+                    [path] * len(tasks),
+                    [t[0] for t in tasks],
+                    [t[1] for t in tasks],
                 )
-                for (iter_n, chrom), job in zip(batch, jobs):
-                    sim_jobs.setdefault(iter_n, {})[chrom] = job
+                for (iter_n, chrom), job in zip(tasks, jobs):
+                    sim_jobs.setdefault(iter_n, []).append(job)
+            else:
+                if not wait:
+                    print(f"Warning: --no-wait ignored because {len(tasks)} tasks exceeds "
+                        f"max_n_slurm_jobs={max_n_slurm_jobs}. Batching required.")
+                    wait = True
 
-                failed = wait_for_jobs(jobs)
-                if failed:
-                    print(f"Warning: {len(failed)} jobs failed in batch {i+1}")
+                n_iter_in_batch = max(1, max_n_slurm_jobs // 4 // end_chr)
+                n_tasks_in_batch = n_iter_in_batch * end_chr
+                batches = [tasks[i:i+n_tasks_in_batch] for i in range(0, len(tasks), n_tasks_in_batch)]
+
+                print(f"Submitting {len(tasks)} tasks in {len(batches)} batches of "
+                    f"{n_tasks_in_batch} ({n_iter_in_batch} iterations each)...")
+
+                for i, batch in enumerate(batches):
+                    print(f"Submitting batch {i+1}/{len(batches)}...")
+                    jobs = executor.map_array(
+                        run_simulation,
+                        [path] * len(batch),
+                        [t[0] for t in batch],
+                        [t[1] for t in batch],
+                    )
+                    for (iter_n, chrom), job in zip(batch, jobs):
+                        sim_jobs.setdefault(iter_n, []).append(job)
+
+                    failed = wait_for_jobs(jobs)
+                    if failed:
+                        print(f"Warning: {len(failed)} jobs failed in batch {i+1}")
+    else:
+        iter_tasks = [
+            iter_n for iter_n in range(1, n_iter + 1)
+            if not all(is_sim_complete(path, iter_n, chrom) for chrom in range(1, end_chr + 1))
+        ]
+        if iter_tasks:
+            jobs = executor.map_array(
+                run_simulation_iter,
+                [path] * len(iter_tasks),
+                iter_tasks,
+            )
+            for iter_n, job in zip(iter_tasks, jobs):
+                sim_jobs[iter_n] = [job]
 
     # for iter_n, jobs in sim_jobs.items():
     #     print(f"iter {iter_n}: {list(jobs.keys())} job ids: {[j.job_id for j in jobs.values()]}")
@@ -358,7 +392,7 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
         all_job_ids = [
             job.job_id
             for jobs in sim_jobs.values()
-            for job in jobs.values()
+            for job in jobs
         ]
         print(f"Submitted {len(all_job_ids)} simulation jobs (--no-wait). Job IDs:")
         for job_id in all_job_ids:
@@ -385,7 +419,7 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
             print(f"Skipping post-processing iter {iter_n} (already complete)")
             continue
 
-        iter_jobs = list(sim_jobs[iter_n].values())
+        iter_jobs = sim_jobs.get(iter_n, [])
         if iter_jobs:
             failed = wait_for_jobs(iter_jobs)
             if failed:
