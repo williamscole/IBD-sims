@@ -265,7 +265,7 @@ def write_bash(cmds, path):
     os.chmod(script_path, 0o755)
     print(f"bash {script_path}")
 
-def print_commands(exp_dict, yaml_paths, pending_only=False, no_wait=False):
+def print_commands(exp_dict, yaml_paths, pending_only=False, no_wait=True):
     """Print run.py commands for all (or only pending) simulations."""
     if pending_only:
         rows = get_status(exp_dict, yaml_paths)
@@ -311,8 +311,8 @@ def main():
     p_cmd.add_argument("yaml", help="Path to experiment meta-YAML")
     p_cmd.add_argument("--pending-only", action="store_true", default=False,
         help="Only print commands for simulations that are not yet complete")
-    p_cmd.add_argument("--no-wait", action="store_true", default=False,
-        help="Add --no-wait flag to generated commands")
+    p_cmd.add_argument("--wait", action="store_true", default=False,
+        help="Wait for each simulation to finish before submitting the next")
 
     # describe
     p_desc = sub.add_parser("describe", help="Print a summary of the experiment plan (no files created)")
@@ -346,7 +346,7 @@ def main():
         else:
             print_commands(exp_dict, yaml_paths,
                            pending_only=args.pending_only,
-                           no_wait=args.no_wait)
+                           no_wait=not args.wait)
 
 
     elif args.command == "describe":

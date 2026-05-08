@@ -256,14 +256,14 @@ my_experiment/
 **4. Get the commands to run:**
 
 ```bash
-# All simulations
+# All simulations (--no-wait is the default: all Slurm jobs submitted in parallel)
 python experiment.py commands yaml_files/experiment.yaml
 
 # Only simulations not yet complete
 python experiment.py commands yaml_files/experiment.yaml --pending-only
 
-# With --no-wait (to fire-and-forget on Slurm)
-python experiment.py commands yaml_files/experiment.yaml --no-wait
+# Serialize: wait for each simulation to finish before submitting the next
+python experiment.py commands yaml_files/experiment.yaml --wait
 ```
 
 **5. Check progress:**
