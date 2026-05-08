@@ -147,7 +147,7 @@ def postprocess_init(yaml_file):
     with open(exp_dir / 'postprocess.yaml', 'w') as outf:
         yaml.dump(out_args, outf)
 
-def postprocess_commands(yaml_file):
+def postprocess_commands(yaml_file, no_wait=False):
 
     exp_args = load_yaml(yaml_file)
 
@@ -178,7 +178,8 @@ def postprocess_commands(yaml_file):
             cmd.append(f"--set {name}.{arg}={row[arg]}")
 
         for run in exp_list:
-            full_cmd = " ".join([base_cmd, str(exp_dir / run)] + cmd)
+            flag = " --no-wait" if no_wait else ""
+            full_cmd = " ".join([base_cmd, str(exp_dir / run)] + cmd) + flag
             print(full_cmd)
             cmds.append(full_cmd)
 
@@ -247,6 +248,8 @@ def main():
     # commands
     p_cmd = sub.add_parser("commands", help="Print postprocess.py commands for simulations")
     p_cmd.add_argument("yaml", help="Path to post-processing YAML")
+    p_cmd.add_argument("--no-wait", action="store_true", default=False,
+        help="Add --no-wait flag to generated commands")
 
     # commands
     p_desc = sub.add_parser("describe", help="Describe the set of postprocessing runs.")
@@ -260,7 +263,7 @@ def main():
         postprocess_init(args.yaml)
 
     elif args.command == "commands":
-        postprocess_commands(args.yaml)
+        postprocess_commands(args.yaml, no_wait=args.no_wait)
 
     elif args.command == "describe":
         postprocess_describe(args.yaml)
