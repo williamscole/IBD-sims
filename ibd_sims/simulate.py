@@ -107,7 +107,8 @@ def is_sim_complete(path, iter_n, chrom):
     """Check whether a simulation job already completed successfully."""
     ibd_file = f"{path}/iter{iter_n}_chr{chrom}.ibd.gz"
     tmrca_file = f"{path}/iter{iter_n}_chr{chrom}.tmrca.pkl"
-    return os.path.exists(ibd_file) and os.path.exists(tmrca_file)
+    map_file = f"{path}/iter{iter_n}_chr{chrom}.map"
+    return os.path.exists(ibd_file) and os.path.exists(tmrca_file) and os.path.exists(map_file)
 
 
 def is_post_complete(path, iter_n):
@@ -154,12 +155,27 @@ def run_simulation(path, iter_n, chrom):
 
 
 def run_simulation_iter(path, iter_n):
-    """Phase 2 (per-iter mode): simulate all chromosomes for one iteration sequentially."""
+    """Phase 2 (per-iter mode): simulate all chromosomes for one iteration sequentially.
+
+    Each chromosome is run in a subprocess so that any sys.exit() calls inside
+    sim() only terminate the subprocess rather than the whole job.
+    """
+    from multiprocessing import Process
+
     args = load_args(path)
     end_chr = args["end_chr"]
+    print(f"[iter {iter_n}] starting: end_chr={end_chr}")
     for chrom in range(1, end_chr + 1):
-        if not is_sim_complete(path, iter_n, chrom):
-            run_simulation(path, iter_n, chrom)
+        if is_sim_complete(path, iter_n, chrom):
+            print(f"[iter {iter_n}] chr {chrom}: already complete, skipping")
+            continue
+        print(f"[iter {iter_n}] chr {chrom}: simulating...")
+        p = Process(target=run_simulation, args=(path, iter_n, chrom))
+        p.start()
+        p.join()
+        if p.exitcode != 0:
+            raise RuntimeError(f"Simulation failed for iter {iter_n} chr {chrom} (exit code {p.exitcode})")
+        print(f"[iter {iter_n}] chr {chrom}: done")
 
 def concat_ibd_files(prefix, end_chr, hbd: bool = False):
     ext = "hbd" if hbd else "ibd"
