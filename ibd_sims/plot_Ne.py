@@ -21,6 +21,9 @@ import yaml
 
 from simulations import DemographicSetup
 from analyze_experiment import load_experiment_results
+from demography import euro_bottleneck
+
+QUEBEC_FOUNDING_GEN = 17  # BALSAC pedigree depth; Euro demography picks up here
 
 BAND_THRESHOLD = 10   # show percentile band only when n_iters > this
 
@@ -51,14 +54,34 @@ def _make_label(demo: str, method: str, rep: str,
 
 # ── Truth ─────────────────────────────────────────────────────────────────────
 
+def _is_quebec(yargs: dict) -> bool:
+    """Return True if this demo uses the Quebec custom simulation."""
+    custom_sim_path = (yargs.get("custom_sim") or {}).get("path") or ""
+    return "quebec" in custom_sim_path.lower()
+
+
 def get_truth(yargs: dict) -> pd.DataFrame | None:
-    """Return a GEN/NE DataFrame representing the true demographic history."""
+    """Return a GEN/NE DataFrame representing the true demographic history.
+
+    For Quebec: the BALSAC pedigree covers gens 0–QUEBEC_FOUNDING_GEN, so there
+    is no analytic Ne truth for that window.  Uncoalesced lineages then continue
+    through a European-like demography, so we return the euro_bottleneck
+    trajectory starting at gen QUEBEC_FOUNDING_GEN.
+
+    For all other custom_sim demos: no analytic truth available, return None.
+    """
+    gmax = yargs.get("gmax", 300)
+
+    if _is_quebec(yargs):
+        gen_arr = np.arange(QUEBEC_FOUNDING_GEN, gmax + 1)
+        ne_arr = euro_bottleneck.debug().population_size_trajectory(gen_arr)
+        return pd.DataFrame({"GEN": gen_arr, "NE": ne_arr[:, 0]})
+
     if (yargs.get("custom_sim") or {}).get("path"):
-        return None  # empirical/custom sim — no analytic truth
+        return None  # other empirical/custom sims — no analytic truth
 
     try:
         demo = DemographicSetup.create(yargs)
-        gmax = yargs.get("gmax", 300)
         gen_arr = np.arange(0, gmax + 1)
         ne_arr = demo.debug().population_size_trajectory(gen_arr)
         return pd.DataFrame({"GEN": gen_arr, "NE": ne_arr[:, 0]})
