@@ -147,7 +147,7 @@ def postprocess_init(yaml_file):
     with open(exp_dir / 'postprocess.yaml', 'w') as outf:
         yaml.dump(out_args, outf)
 
-def postprocess_commands(yaml_file, no_wait=False):
+def postprocess_commands(yaml_file, no_wait=False, no_local=False):
 
     exp_args = load_yaml(yaml_file)
 
@@ -184,8 +184,12 @@ def postprocess_commands(yaml_file, no_wait=False):
             cmd.append(f"--set {name}.{arg}={val}")
 
         for run in exp_list:
-            flag = " --no-wait" if no_wait else ""
-            full_cmd = " ".join([base_cmd, str(exp_dir / run)] + cmd) + flag
+            flags = ""
+            if no_local:
+                flags += " --set local=false"
+            if no_wait:
+                flags += " --no-wait"
+            full_cmd = " ".join([base_cmd, str(exp_dir / run)] + cmd) + flags
             print(full_cmd)
             cmds.append(full_cmd)
 
@@ -256,6 +260,8 @@ def main():
     p_cmd.add_argument("yaml", help="Path to post-processing YAML")
     p_cmd.add_argument("--no-wait", action="store_true", default=False,
         help="Add --no-wait flag to generated commands")
+    p_cmd.add_argument("--no-local", action="store_true", default=False,
+        help="Add --set local=false to generated commands (submit as Slurm jobs)")
 
     # commands
     p_desc = sub.add_parser("describe", help="Describe the set of postprocessing runs.")
@@ -269,7 +275,7 @@ def main():
         postprocess_init(args.yaml)
 
     elif args.command == "commands":
-        postprocess_commands(args.yaml, no_wait=args.no_wait)
+        postprocess_commands(args.yaml, no_wait=args.no_wait, no_local=args.no_local)
 
     elif args.command == "describe":
         postprocess_describe(args.yaml)
