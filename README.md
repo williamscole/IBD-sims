@@ -553,6 +553,7 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 
 ## TODO
 
+- [ ] In per-iteration mode, parallelize chromosome simulations within the same Slurm job (e.g. via `multiprocessing.Pool`). Currently chromosomes run sequentially inside `run_simulation_iter`; since each chromosome job is relatively lightweight, running several in parallel would make better use of the allocated node.
 - [ ] Add a global `--max-jobs` option to `experiment.py commands` that passes through to each generated `run.py simulate` command. Currently `--max-jobs` only limits jobs within a single simulation run, so with `--no-wait` (the default) an experiment with many simulations can submit more total Slurm jobs than the cluster's per-user queue limit.
 
 
