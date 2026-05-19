@@ -454,7 +454,7 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
             mem=int(args["gb"] * 1.8 * 1024),
             time=pp_timeout,
             cpus_per_task=args.get("workers", args.get("nthreads", 1)),
-            additional_parameters={}
+            additional_parameters={"export": "ALL"},
         )
 
     post_jobs = {}
