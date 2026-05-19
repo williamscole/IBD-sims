@@ -175,7 +175,7 @@ def _plot_panel(
         ax.plot(generations, mean, label=legend_label, color=color,
                 linewidth=2.5, linestyle=linestyle)
 
-        if len(dfs) > 1:
+        if len(dfs) > BAND_THRESHOLD:
             p5  = np.percentile(ne_stack,  5, axis=0)
             p95 = np.percentile(ne_stack, 95, axis=0)
             ax.fill_between(generations, p5, p95, color=color, alpha=0.15)
