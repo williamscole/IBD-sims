@@ -71,6 +71,11 @@ class PostProcessIBDNe(PostProcessor):
             self._execute_loop(wait=wait)
 
     def _single_iter(self, iter_n):
+        out_file = f"{self.out_dir}/iter{iter_n}.ne"
+        if os.path.exists(out_file) and sum(1 for _ in open(out_file)) > 10:
+            print(f"Already complete: {out_file}, skipping.")
+            return
+
         cfg = self._get_sub_config()
         setup = load_config()
         prefix = f"{self.path}/iter{iter_n}"
@@ -151,6 +156,7 @@ class PostProcessHapNeLD(PostProcessor):
 
         prefix = f"{self.path}/iter{iter_n}"
         iter_out_dir = os.path.join(self.out_dir, f"iter{iter_n}")
+        # TODO: add completion check once HapNe-LD output format is known
         os.makedirs(iter_out_dir, exist_ok=True)
 
         filtering = _get_filter(self)
@@ -195,6 +201,11 @@ class PostProcessHapNeIBD(PostProcessor):
 
         prefix = f"{self.path}/iter{iter_n}"
         iter_out_dir = os.path.join(self.out_dir, f"iter{iter_n}")
+        out_file = os.path.join(iter_out_dir, "HapNe", "hapne.csv")
+        if os.path.exists(out_file) and sum(1 for _ in open(out_file)) > 10:
+            print(f"Already complete: {out_file}, skipping.")
+            return
+
         os.makedirs(iter_out_dir, exist_ok=True)
 
         filtering = _get_filter(self)
