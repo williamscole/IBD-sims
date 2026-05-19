@@ -17,10 +17,15 @@ class Kinship:
         if end_chr == 30:
             self.tot = 3000
         elif end_chr == 22:
-            self.tot = 0
-            for i in range(1, 23):
-                map_df = pd.read_csv(yargs["hapmap_chr1"].replace("chr1", f"chr{i}"), sep="\\s+")
-                self.tot += map_df.iloc[-1]["Map(cM)"] - map_df.iloc[0]["Map(cM)"]
+            hapmap_chr1 = yargs.get("hapmap_chr1")
+            if hapmap_chr1 is not None:
+                self.tot = 0
+                for i in range(1, 23):
+                    map_df = pd.read_csv(hapmap_chr1.replace("chr1", f"chr{i}"), sep="\\s+")
+                    self.tot += map_df.iloc[-1]["Map(cM)"] - map_df.iloc[0]["Map(cM)"]
+            else:
+                # Fallback for runs (e.g. custom sims) that don't have a hapmap path
+                self.tot = 3615
         elif end_chr == 2:
             self.tot = 200
         elif end_chr == 1:
