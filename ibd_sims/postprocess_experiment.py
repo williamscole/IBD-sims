@@ -1,9 +1,27 @@
 import itertools as it
+import os
 import pandas as pd
 import yaml
 from pathlib import Path
 
 from experiment import write_bash
+
+
+def _is_run_complete(name, sim_dir, out_subdir, n_iter):
+    """Return True if all iterations for this (method, sim) are complete."""
+    if name == "ibdne":
+        return all(
+            os.path.exists(f"{sim_dir}/{out_subdir}/iter{i}.ne") and
+            sum(1 for _ in open(f"{sim_dir}/{out_subdir}/iter{i}.ne")) > 10
+            for i in range(1, n_iter + 1)
+        )
+    elif name == "hapne_ibd":
+        return all(
+            os.path.exists(f"{sim_dir}/{out_subdir}/iter{i}/HapNe/hapne.csv") and
+            sum(1 for _ in open(f"{sim_dir}/{out_subdir}/iter{i}/HapNe/hapne.csv")) > 10
+            for i in range(1, n_iter + 1)
+        )
+    return False  # unknown method — don't skip
 
 def load_yaml(yaml_file):
     with open(yaml_file, "r") as yamlf:
@@ -184,6 +202,11 @@ def postprocess_commands(yaml_file, no_wait=False, no_local=False):
             cmd.append(f"--set {name}.{arg}={val}")
 
         for run in exp_list:
+            sim_dir = exp_dir / run
+            n_iter = yaml.safe_load(open(sim_dir / "args.yaml"))["iter"]
+            if _is_run_complete(name, sim_dir, row["directory"], n_iter):
+                print(f"# Skipping {run} / {row['directory']} (all {n_iter} iters complete)")
+                continue
             flags = ""
             if no_local:
                 flags += " --set local=false"
