@@ -1,4 +1,5 @@
 import msprime
+import os
 import pandas as pd
 import gzip
 import numpy as np
@@ -81,5 +82,19 @@ def write_vcf(ts, output, chrom, rate, seed, snps_pkl="ukb_snps.pkl"):
     with gzip.open(f"{output}.vcf.gz", "wt") as f:
         out_ts.write_vcf(f, contig_id=str(chrom))
 
-
     print(f"Wrote VCF: {output}.vcf.gz")
+
+    # Write iter-level samples file once (same samples across all chromosomes).
+    # Strip the _chr{n} suffix to get the iteration-level prefix.
+    iter_prefix = output.rsplit("_chr", 1)[0]
+    samples_file = f"{iter_prefix}.samples"
+    if not os.path.exists(samples_file):
+        with gzip.open(f"{output}.vcf.gz", "rt") as f:
+            for line in f:
+                if line.startswith("#CHROM"):
+                    sample_ids = line.strip().split("\t")[9:]
+                    break
+        with open(samples_file, "w") as sf:
+            for sid in sample_ids:
+                sf.write(f"{sid}\n")
+        print(f"Wrote samples file: {samples_file} ({len(sample_ids)} samples)")

@@ -111,6 +111,31 @@ def prune_relatives(g, target=1000, out_nodes=[]):
 
 # --- Node file helpers ---
 
+def _samples_file_path(ibd_path):
+    """Return path to the iter-level samples file written during simulation.
+
+    e.g. /path/to/iter1.ibd.gz -> /path/to/iter1.samples
+    """
+    base = ibd_path.replace(".ibd.gz", "").replace(".ibd", "")
+    return f"{base}.samples"
+
+
+def _read_all_nodes(ibd_path, n_samples):
+    """Return the full set of sample IDs for this iteration.
+
+    Reads from iter{n}.samples (written by write_vcf during simulation) so that
+    all individuals — including those that share no detectable IBD — are included
+    in the candidate pool. Falls back to tsk_0..tsk_{n-1} for older runs that
+    pre-date the samples file.
+    """
+    samples_file = _samples_file_path(ibd_path)
+    if os.path.exists(samples_file):
+        with open(samples_file) as f:
+            return set(line.strip() for line in f if line.strip())
+    # Fallback for runs without a samples file
+    return {f"tsk_{i}" for i in range(n_samples)}
+
+
 def _node_file_path(ibd_path, label):
     """Return path to the node list file for a given label, next to the IBD file.
 
@@ -177,7 +202,7 @@ def get_nodes(ibd_path, n_samples, filtering):
 
     # No filtering — return everybody
     if filtering == "none":
-        return {f"tsk_{i}" for i in range(n_samples)}
+        return _read_all_nodes(ibd_path, n_samples)
 
     # For the subsetting modes, check cache first
     nodes = _read_node_file(ibd_path, filtering)
@@ -187,14 +212,14 @@ def get_nodes(ibd_path, n_samples, filtering):
         return nodes
 
     print(f"No cached node file found for '{filtering}', computing fresh.")
-    all_nodes = {f"tsk_{i}" for i in range(n_samples)}
+    all_nodes = _read_all_nodes(ibd_path, n_samples)
     target = n_samples // 10
+    ibd_df_full = pd.read_csv(ibd_path, sep="\\s+", header=None)
 
     if filtering == "random":
         nodes = set(np.random.choice(list(all_nodes), target, replace=False))
 
     else:
-        ibd_df_full = pd.read_csv(ibd_path, sep="\\s+", header=None)
         kinship_obj = Kinship(os.path.dirname(ibd_path))
 
         rows = []
@@ -238,7 +263,7 @@ def write_samples(ibd_path, n_samples):
     next to the IBD file. Safe to call multiple times — will overwrite existing files.
     """
     ibd_df = pd.read_csv(ibd_path, sep="\\s+", header=None)
-    all_nodes = {f"tsk_{i}" for i in range(n_samples)}
+    all_nodes = _read_all_nodes(ibd_path, n_samples)
     target = n_samples // 10
 
     # random — no kinship needed
