@@ -4,6 +4,35 @@ A pipeline for simulating realistic IBD segments under a range of demographic hi
 
 Ancestry is simulated with [msprime](https://tskit.dev/msprime/docs/stable/intro.html), supporting both standard coalescent simulations and simulations that begin with an explicit Wright-Fisher pedigree for recent generations (the DTWF model). IBD segments are detected from simulated genotype data using [hap-ibd](https://github.com/browning-lab/hap-ibd).
 
+## Table of contents
+
+- [Requirements](#requirements)
+- [Setup](#setup)
+  - [1. Create the conda environment](#1-create-the-conda-environment)
+  - [2. Register the pipeline](#2-register-the-pipeline)
+  - [3. Configure paths](#3-configure-paths)
+- [HapNe patches](#hapne-patches)
+- [Quick start](#quick-start)
+- [Pipeline overview](#pipeline-overview)
+  - [Phase 1: Simulation](#phase-1-simulation)
+  - [Phase 2: Post-processing](#phase-2-post-processing)
+  - [Phase 3: Plotting](#phase-3-plotting)
+- [Experiment manager](#experiment-manager)
+  - [Workflow](#workflow)
+  - [Adding post-processing](#adding-post-processing)
+- [Postprocessing experiment manager](#postprocessing-experiment-manager)
+  - [Workflow](#workflow-1)
+- [YAML configuration](#yaml-configuration)
+  - [Simulation parameters](#simulation-parameters)
+  - [Post-processing parameters](#post-processing-parameters)
+- [Output structure](#output-structure)
+- [Example configurations](#example-configurations)
+- [Adding a new demographic model](#adding-a-new-demographic-model)
+- [Writing a custom post-processing module](#writing-a-custom-post-processing-module)
+- [SNP density and MAF distribution](#snp-density-and-maf-distribution)
+- [Repository structure](#repository-structure)
+- [TODO](#todo)
+
 ## Requirements
 
 **Python packages:** msprime, numpy, pandas, matplotlib, seaborn, PyYAML, submitit, stdpopsim, hapne
