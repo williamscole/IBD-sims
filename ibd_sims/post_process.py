@@ -149,6 +149,14 @@ class PostProcessor(ABC):
     # Subclasses should override this with their resource-only fields.
     resource_fields: list = []
 
+    def is_iter_complete(self, iter_n: int) -> bool:
+        """Return True if this iteration's output already exists and is valid.
+
+        Override in subclasses to enable pre-submission completion checks.
+        Default returns False (always run).
+        """
+        return False
+
     def make_dir(self, path, dir_name):
         made_dir = False
         out_dir = ""
@@ -215,7 +223,15 @@ class PostProcessor(ABC):
 
     def _execute_loop(self, wait=True):
         local = self._get_resource("local")
-        iters = list(range(1, self.n_iter + 1))
+        iters = [i for i in range(1, self.n_iter + 1) if not self.is_iter_complete(i)]
+
+        if not iters:
+            print(f"[{self.sub_config_key}] All {self.n_iter} iterations already complete, skipping.")
+            return
+
+        skipped = self.n_iter - len(iters)
+        if skipped:
+            print(f"[{self.sub_config_key}] {skipped}/{self.n_iter} iterations already complete, running {len(iters)}.")
 
         if local:
             workers = self._get_resource("workers")

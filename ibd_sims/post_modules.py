@@ -62,6 +62,10 @@ class PostProcessPurple(PostProcessor):
 class PostProcessIBDNe(PostProcessor):
     sub_config_key = "ibdne"
 
+    def is_iter_complete(self, iter_n: int) -> bool:
+        out_file = f"{self.out_dir}/iter{iter_n}.ne"
+        return os.path.exists(out_file) and sum(1 for _ in open(out_file)) > 10
+
     def execute(self, wait=True):
         self._execute_helper()
 
@@ -187,6 +191,10 @@ class PostProcessHapNeLD(PostProcessor):
 class PostProcessHapNeIBD(PostProcessor):
     sub_config_key = "hapne_ibd"
     resource_fields = ["local", "workers", "mem_gb", "time_min"]
+
+    def is_iter_complete(self, iter_n: int) -> bool:
+        out_file = os.path.join(self.out_dir, f"iter{iter_n}", "HapNe", "hapne.csv")
+        return os.path.exists(out_file) and sum(1 for _ in open(out_file)) > 10
 
     def execute(self, wait=True):
         self._execute_helper()
