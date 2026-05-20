@@ -125,15 +125,21 @@ def _read_all_nodes(ibd_path, n_samples):
 
     Reads from iter{n}.samples (written by write_vcf during simulation) so that
     all individuals — including those that share no detectable IBD — are included
-    in the candidate pool. Falls back to tsk_0..tsk_{n-1} for older runs that
-    pre-date the samples file.
+    in the candidate pool.
+
+    Falls back to deriving IDs from the IBD file itself for older runs that
+    pre-date the samples file. This correctly handles any ID format (e.g. Quebec
+    genealogy IDs) but will miss individuals with zero detected IBD segments.
     """
     samples_file = _samples_file_path(ibd_path)
     if os.path.exists(samples_file):
         with open(samples_file) as f:
             return set(line.strip() for line in f if line.strip())
-    # Fallback for runs without a samples file
-    return {f"tsk_{i}" for i in range(n_samples)}
+    # Fallback: derive from the IBD file — correct IDs, but misses zero-IBD individuals
+    print(f"  Warning: no samples file found at {samples_file}. "
+          f"Deriving sample IDs from IBD file (individuals with no IBD segments excluded).")
+    ibd_df = pd.read_csv(ibd_path, sep="\\s+", header=None)
+    return set(ibd_df[0].values) | set(ibd_df[2].values)
 
 
 def _node_file_path(ibd_path, label):
