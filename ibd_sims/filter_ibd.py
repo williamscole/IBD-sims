@@ -206,6 +206,16 @@ def get_nodes(ibd_path, n_samples, filtering):
         kinship["related"] = kinship["k"].apply(kinship_obj.assign_related)
         related = kinship[kinship.related]
 
+        n_pairs = len(kinship)
+        n_related = len(related)
+        print(f"  Kinship summary: {n_pairs} pairs with >10 cM total IBD, "
+              f"{n_related} classified as 1st/2nd/3rd degree "
+              f"(thresholds: 3rd>{kinship_obj.degrees['3rd'][0]:.0f} cM, "
+              f"genome={kinship_obj.tot:.0f} cM)")
+        if n_related == 0:
+            print(f"  WARNING: no related pairs found — 'related' node set will be random. "
+                  f"Top-5 pair IBD values: {kinship['k'].head().tolist()}")
+
         if filtering == "related":
             nodes = subset_close(related, all_nodes, target=target)
 

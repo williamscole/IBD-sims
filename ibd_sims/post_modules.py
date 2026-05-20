@@ -224,6 +224,10 @@ class PostProcessHapNeIBD(PostProcessor):
                     filtering,
                 )
 
+                if os.path.getsize(tmp_ibd) == 0:
+                    print(f"Warning: no IBD segments remain after '{filtering}' filtering for iter{iter_n}, skipping.")
+                    return
+
                 # nb_samples for HapNe-IBD must reflect the filtered count
                 nodes = get_nodes(f"{prefix}.ibd.gz", self.config.samples, filtering)
                 nb_samples = len(nodes)
