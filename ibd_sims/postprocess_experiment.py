@@ -264,7 +264,7 @@ def postprocess_describe(yaml_file):
     print_postprocess_summary(exp_args)
 
 
-def postprocess_status(yaml_file):
+def postprocess_status(yaml_file, verbose=False):
     """Check output files for each postprocess row and print a progress table.
 
     For each row in postprocess.tsv, counts how many sim directories have
@@ -327,16 +327,26 @@ def postprocess_status(yaml_file):
     with open(tracking_file, "w") as outf:
         tracking_df.to_csv(outf, sep="\t", index=False)
 
-    # Print table
-    name_w = max(len("postprocess"), tracking_df["name"].astype(str).map(len).max())
-    dir_w  = max(len("directory"),   tracking_df["directory"].astype(str).map(len).max())
-    prog_w = max(len("progress"),    max(len(p) for _, p, _ in results))
+    # Insert progress column into df for printing
+    tracking_df.insert(
+        tracking_df.columns.get_loc("status") + 1,
+        "progress",
+        [p for _, p, _ in results],
+    )
 
-    header = f"{'postprocess':<{name_w}}  {'directory':<{dir_w}}  {'progress':<{prog_w}}  status"
-    print(header)
-    print("-" * len(header))
-    for (idx, progress, new_status), (_, row) in zip(results, tracking_df.iterrows()):
-        print(f"{str(row['name']):<{name_w}}  {str(row['directory']):<{dir_w}}  {progress:<{prog_w}}  {new_status}")
+    if verbose:
+        print(tracking_df.to_string(index=False))
+    else:
+        # Print compact table: name / directory / progress / status only
+        name_w = max(len("postprocess"), tracking_df["name"].astype(str).map(len).max())
+        dir_w  = max(len("directory"),   tracking_df["directory"].astype(str).map(len).max())
+        prog_w = max(len("progress"),    max(len(p) for _, p, _ in results))
+
+        header = f"{'postprocess':<{name_w}}  {'directory':<{dir_w}}  {'progress':<{prog_w}}  status"
+        print(header)
+        print("-" * len(header))
+        for (idx, progress, new_status), (_, row) in zip(results, tracking_df.iterrows()):
+            print(f"{str(row['name']):<{name_w}}  {str(row['directory']):<{dir_w}}  {progress:<{prog_w}}  {new_status}")
 
 
 
@@ -368,6 +378,8 @@ def main():
     # status
     p_status = sub.add_parser("status", help="Check output files and print progress for each postprocess row.")
     p_status.add_argument("yaml", help="Path to post-processing YAML")
+    p_status.add_argument("--verbose", "-v", action="store_true", default=False,
+        help="Print the full TSV including all arg columns")
 
 
     args = parser.parse_args()
@@ -383,7 +395,7 @@ def main():
         postprocess_describe(args.yaml)
 
     elif args.command == "status":
-        postprocess_status(args.yaml)
+        postprocess_status(args.yaml, verbose=args.verbose)
 
 if __name__ == "__main__":
     main()
