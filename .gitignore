@@ -4,3 +4,4 @@ kinship.py
 msprime_scripts.py
 *.sh
 *.ipynb
+.DS_Store
