@@ -264,6 +264,81 @@ def postprocess_describe(yaml_file):
     print_postprocess_summary(exp_args)
 
 
+def postprocess_status(yaml_file):
+    """Check output files for each postprocess row and print a progress table.
+
+    For each row in postprocess.tsv, counts how many sim directories have
+    complete output (using _is_run_complete). Prints an x/y progress column,
+    then writes updated statuses back to the TSV:
+      - 'complete' if all sims are done
+      - 'rerun'    if some but not all sims are done
+      - 'new'      if no sims have started yet
+    """
+    exp_args = load_yaml(yaml_file)
+    exp_dir = Path(exp_args["experiment_directory"])
+
+    tracking_file = exp_dir / "postprocess.tsv"
+    if not tracking_file.exists():
+        print("postprocess.tsv not found — run 'init' first.")
+        return
+
+    yaml_files_txt = exp_dir / "yaml_files/yaml_files.txt"
+    if not yaml_files_txt.exists():
+        print("yaml_files/yaml_files.txt not found — run 'experiment.py init' first.")
+        return
+
+    with open(yaml_files_txt, "r") as yfs:
+        exp_list = [i.strip().replace(".yaml", "") for i in yfs.readlines()]
+
+    n_sims = len(exp_list)
+
+    tracking_df = pd.read_csv(tracking_file, sep="\t")
+
+    # For each row, check how many sim dirs are complete
+    results = []
+    for idx, row in tracking_df.iterrows():
+        name = row["name"]
+        out_subdir = row["directory"]
+
+        completed = 0
+        for run in exp_list:
+            sim_dir = exp_dir / run
+            args_yaml = sim_dir / "args.yaml"
+            if not args_yaml.exists():
+                continue
+            n_iter = yaml.safe_load(open(args_yaml))["iter"]
+            if _is_run_complete(name, sim_dir, out_subdir, n_iter):
+                completed += 1
+
+        progress = f"{completed}/{n_sims}"
+        if completed == n_sims:
+            new_status = "complete"
+        elif completed > 0:
+            new_status = "rerun"
+        else:
+            new_status = "new"
+
+        results.append((idx, progress, new_status))
+
+    # Update TSV
+    for idx, progress, new_status in results:
+        tracking_df.at[idx, "status"] = new_status
+
+    with open(tracking_file, "w") as outf:
+        tracking_df.to_csv(outf, sep="\t", index=False)
+
+    # Print table
+    name_w = max(len("postprocess"), tracking_df["name"].astype(str).map(len).max())
+    dir_w  = max(len("directory"),   tracking_df["directory"].astype(str).map(len).max())
+    prog_w = max(len("progress"),    max(len(p) for _, p, _ in results))
+
+    header = f"{'postprocess':<{name_w}}  {'directory':<{dir_w}}  {'progress':<{prog_w}}  status"
+    print(header)
+    print("-" * len(header))
+    for (idx, progress, new_status), (_, row) in zip(results, tracking_df.iterrows()):
+        print(f"{str(row['name']):<{name_w}}  {str(row['directory']):<{dir_w}}  {progress:<{prog_w}}  {new_status}")
+
+
 
 def main():
     import argparse
@@ -286,9 +361,13 @@ def main():
     p_cmd.add_argument("--no-local", action="store_true", default=False,
         help="Add --set local=false to generated commands (submit as Slurm jobs)")
 
-    # commands
+    # describe
     p_desc = sub.add_parser("describe", help="Describe the set of postprocessing runs.")
     p_desc.add_argument("yaml", help="Path to post-processing YAML")
+
+    # status
+    p_status = sub.add_parser("status", help="Check output files and print progress for each postprocess row.")
+    p_status.add_argument("yaml", help="Path to post-processing YAML")
 
 
     args = parser.parse_args()
@@ -302,6 +381,9 @@ def main():
 
     elif args.command == "describe":
         postprocess_describe(args.yaml)
+
+    elif args.command == "status":
+        postprocess_status(args.yaml)
 
 if __name__ == "__main__":
     main()

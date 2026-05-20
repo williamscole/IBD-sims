@@ -372,7 +372,7 @@ python ibd_sims/postprocess_experiment.py init yaml_files/postprocess_experiment
 
 This creates two files in `my_experiment/`:
 
-- `postprocess.tsv` — tracking file with one row per (postprocess, combo) combination and a `status` column (`new`, `rerun`, or `done`)
+- `postprocess.tsv` — tracking file with one row per (postprocess, combo) combination and a `status` column (`new`, `rerun`, or `complete`)
 - `postprocess.yaml` — base postprocessing config (all args except combo axes), used by the generated commands
 
 **4. Get the commands to run:**
@@ -388,6 +388,24 @@ python ibd_sims/postprocess_experiment.py commands yaml_files/postprocess_experi
 This prints one `python run.py postprocess` command per (simulation run × postprocess combo) pair and writes `my_experiment/postprocess_scripts/run.sh`. Only rows with `status` of `new` or `rerun` are included.
 
 By default, running the bash script serialises execution — each command completes before the next starts. Pass `--no-wait` if you want all Slurm jobs submitted at once without waiting.
+
+**5. Check progress:**
+
+```bash
+python ibd_sims/postprocess_experiment.py status yaml_files/postprocess_experiment.yaml
+```
+
+This inspects the actual output files for each (postprocess, combo) row across all simulation directories and prints a progress table:
+
+```
+postprocess  directory  progress  status
+-----------------------------------------
+ibdne        ibdne/001  45/50     rerun
+ibdne        ibdne/002  50/50     complete
+hapne_ibd    hapne_ibd/001  0/50  new
+```
+
+It also updates `postprocess.tsv` with the current status (`complete` if all sims are done, `rerun` if partially done, `new` if none have started). Running `commands` afterwards will automatically pick up any incomplete rows.
 
 ## YAML configuration
 
