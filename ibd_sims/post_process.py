@@ -210,6 +210,16 @@ class PostProcessor(ABC):
 
     def _submit_jobs(self):
         """Submit Slurm jobs and return them without waiting."""
+        iters = [i for i in range(1, self.n_iter + 1) if not self.is_iter_complete(i)]
+
+        if not iters:
+            print(f"[{self.sub_config_key}] All {self.n_iter} iterations already complete, skipping.")
+            return []
+
+        skipped = self.n_iter - len(iters)
+        if skipped:
+            print(f"[{self.sub_config_key}] {skipped}/{self.n_iter} iterations already complete, submitting {len(iters)}.")
+
         executor = submitit.SlurmExecutor(folder=f"{self.path}/slurm")
         executor.update_parameters(
             mem=f"{self._get_resource('mem_gb')}GB",
@@ -218,7 +228,6 @@ class PostProcessor(ABC):
             use_srun=False,
             additional_parameters={"export": "ALL"},
         )
-        iters = list(range(1, self.n_iter + 1))
         return executor.map_array(self._single_iter, iters)
 
     def _execute_loop(self, wait=True):
