@@ -21,6 +21,8 @@ def _is_run_complete(name, sim_dir, out_subdir, n_iter):
             sum(1 for _ in open(f"{sim_dir}/{out_subdir}/iter{i}/HapNe/hapne.csv")) > 10
             for i in range(1, n_iter + 1)
         )
+    elif name == "ibd_summary":
+        return os.path.exists(f"{sim_dir}/{out_subdir}/ibd_summary.tsv")
     return False  # unknown method — don't skip
 
 def load_yaml(yaml_file):
