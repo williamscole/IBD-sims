@@ -302,6 +302,10 @@ class PostProcessIBDSummary(PostProcessor):
         # Load IBD file once; reuse for all filter modes
         ibd_df = pd.read_csv(ibd_path, sep=r"\s+", header=None)
 
+        # Apply minimum segment length threshold (col 7 = length in cM)
+        mincm = getattr(cfg, "mincm", 2)
+        ibd_df = ibd_df[ibd_df[7] > mincm]
+
         rows = []
         for filtering in filters:
             if _needs_filtering(filtering):
