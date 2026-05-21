@@ -10,6 +10,7 @@ per demographic scenario found in the experiment directory.
 """
 
 import argparse
+import pickle
 import sys
 from pathlib import Path
 
@@ -294,17 +295,22 @@ def _results_to_data_dict(
 
 # ── Main entry ────────────────────────────────────────────────────────────────
 
-def plot(exp_dir: str, vlines: bool = True) -> None:
+def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False) -> None:
     """
     Load all Ne estimates from an experiment directory and produce one
-    Ne_plot.png per demographic scenario.
+    Ne_plot.png per demographic scenario, saved into [exp_dir]/plots/.
 
     Parameters
     ----------
-    exp_dir : path to the experiment directory (passed to load_experiment_results)
-    vlines  : draw log2-Ne vertical reference lines (only when truth is constant)
+    exp_dir      : path to the experiment directory (passed to load_experiment_results)
+    vlines       : draw log2-Ne vertical reference lines (only when truth is constant)
+    save_pickle  : if True, write [exp_dir]/plots/plot_data.pkl with all data
+                   needed to reproduce the plots in a Jupyter notebook
     """
     exp_dir = Path(exp_dir)
+    plots_dir = exp_dir / "plots"
+    plots_dir.mkdir(exist_ok=True)
+
     results = load_experiment_results(exp_dir)
     ibdne_df  = results["ibdne"]
     hapne_df  = results["hapne_ibd"]
@@ -318,6 +324,22 @@ def plot(exp_dir: str, vlines: bool = True) -> None:
     if not demos:
         print("No results found.")
         return
+
+    # Collected for optional pickle output.
+    # Structure:
+    #   {
+    #     "demos": {
+    #       demo_name: {
+    #         "data_dict": {label: [df, ...]},   # GEN / NE columns
+    #         "truth_df":  pd.DataFrame | None,  # GEN / NE columns
+    #       }
+    #     },
+    #     "plot_kwargs": {"log_scale": bool, "xlim": tuple, "vlines": bool},
+    #   }
+    pickle_payload: dict = {
+        "demos": {},
+        "plot_kwargs": {"log_scale": True, "xlim": (0, 50), "vlines": vlines},
+    }
 
     for demo in sorted(demos):
         print(f"\nPlotting demo: {demo}")
@@ -337,10 +359,22 @@ def plot(exp_dir: str, vlines: bool = True) -> None:
             print(f"  [truth] No args.yaml found at {demo_args_path}")
 
         fig, ax = plot_ne_estimates(data_dict, truth_df=truth_df, vlines=vlines)
-        out_path = exp_dir / f"{demo}_Ne_plot.png"
+        out_path = plots_dir / f"{demo}_Ne_plot.png"
         plt.savefig(out_path, dpi=600)
         print(f"  Saved: {out_path}")
         plt.close(fig)
+
+        if save_pickle:
+            pickle_payload["demos"][demo] = {
+                "data_dict": data_dict,
+                "truth_df":  truth_df,
+            }
+
+    if save_pickle:
+        pkl_path = plots_dir / "Ne_data.pkl"
+        with open(pkl_path, "wb") as fh:
+            pickle.dump(pickle_payload, fh)
+        print(f"\nPickle saved: {pkl_path}")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -354,9 +388,13 @@ def _parse_args():
     parser.add_argument("exp_dir", help="Experiment directory (passed to load_experiment_results)")
     parser.add_argument("--no-vlines", action="store_true", default=False,
                         help="Suppress log2-Ne vertical reference lines")
+    parser.add_argument("--save-pickle", action="store_true", default=False,
+                        help="Write [exp_dir]/plots/plot_data.pkl with all data "
+                             "needed to reproduce plots in a Jupyter notebook")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_args()
-    plot(exp_dir=args.exp_dir, vlines=not args.no_vlines)
+    plot(exp_dir=args.exp_dir, vlines=not args.no_vlines,
+         save_pickle=args.save_pickle)
