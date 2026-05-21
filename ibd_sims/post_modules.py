@@ -259,3 +259,95 @@ class PostProcessHapNeIBD(PostProcessor):
                 nb_samples=self.config.samples,
                 end_chr=self.config.end_chr,
             )
+
+
+class PostProcessIBDSummary(PostProcessor):
+    """Summarise IBD segments across iterations and filter modes.
+
+    For each iteration and each configured filter mode, computes:
+      - n_samples         : number of samples in the (sub)set
+      - n_segments        : number of IBD segments surviving filtering
+      - n_sharing_pairs   : number of pairs sharing at least one IBD segment
+      - mean_pairwise_ibd_cM : mean total IBD (cM) across sharing pairs
+      - total_ibd_cM      : total IBD (cM) across all sharing pairs
+
+    Per-iteration results are written to iter{n}.tsv, then concatenated
+    into a single ibd_summary.tsv once all iterations are complete.
+    """
+
+    sub_config_key = "ibd_summary"
+
+    def is_iter_complete(self, iter_n: int) -> bool:
+        return os.path.exists(os.path.join(self.out_dir, f"iter{iter_n}.tsv"))
+
+    def execute(self, wait=True):
+        self._execute_helper()
+
+        if self.single_iter:
+            self._single_iter(self.iter_n)
+        else:
+            self._execute_loop(wait=wait)
+            self._concatenate()
+
+    def _single_iter(self, iter_n: int):
+        out_file = os.path.join(self.out_dir, f"iter{iter_n}.tsv")
+        if os.path.exists(out_file):
+            print(f"Already complete: {out_file}, skipping.")
+            return
+
+        cfg = self._get_sub_config()
+        filters = getattr(cfg, "filters", [None, "related", "unrelated"])
+        ibd_path = f"{self.path}/iter{iter_n}.ibd.gz"
+
+        # Load IBD file once; reuse for all filter modes
+        ibd_df = pd.read_csv(ibd_path, sep=r"\s+", header=None)
+
+        rows = []
+        for filtering in filters:
+            if _needs_filtering(filtering):
+                nodes = get_nodes(ibd_path, self.config.samples, filtering)
+                filtered = ibd_df[ibd_df[0].isin(nodes) & ibd_df[2].isin(nodes)]
+                n_samples = len(nodes)
+                filter_label = filtering
+            else:
+                filtered = ibd_df
+                n_samples = self.config.samples
+                filter_label = "unfiltered"
+
+            n_segments = len(filtered)
+
+            if n_segments > 0:
+                pair_ibd = filtered.groupby([0, 2])[7].sum()
+                n_sharing_pairs = len(pair_ibd)
+                mean_pairwise_ibd_cM = pair_ibd.mean()
+                total_ibd_cM = pair_ibd.sum()
+            else:
+                n_sharing_pairs = 0
+                mean_pairwise_ibd_cM = float("nan")
+                total_ibd_cM = 0.0
+
+            rows.append({
+                "iter": iter_n,
+                "filter": filter_label,
+                "n_samples": n_samples,
+                "n_segments": n_segments,
+                "n_sharing_pairs": n_sharing_pairs,
+                "mean_pairwise_ibd_cM": mean_pairwise_ibd_cM,
+                "total_ibd_cM": total_ibd_cM,
+            })
+
+        pd.DataFrame(rows).to_csv(out_file, sep="\t", index=False)
+        print(f"Wrote {out_file}")
+
+    def _concatenate(self):
+        """Concatenate all per-iter TSVs into a single ibd_summary.tsv."""
+        parts = []
+        for iter_n in range(1, self.n_iter + 1):
+            f = os.path.join(self.out_dir, f"iter{iter_n}.tsv")
+            if os.path.exists(f):
+                parts.append(pd.read_csv(f, sep="\t"))
+
+        if parts:
+            out = os.path.join(self.out_dir, "ibd_summary.tsv")
+            pd.concat(parts, ignore_index=True).to_csv(out, sep="\t", index=False)
+            print(f"Wrote {out}")

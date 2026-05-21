@@ -477,6 +477,12 @@ run_directory/
 │   └── 001/
 ├── purple_nodes/
 │   └── 001/
+├── ibd_summary/
+│   └── 001/
+│       ├── args.yaml         # analysis config for this run
+│       ├── iter1.tsv         # per-iteration intermediate (one row per filter mode)
+│       ├── iter2.tsv
+│       └── ibd_summary.tsv   # concatenated summary across all iterations
 ├── Ne_plot.png
 ├── slurm/
 └── errors/
@@ -560,6 +566,8 @@ Key things to know:
 - `self.out_dir` is set by `_execute_helper()` and points to the numbered output subdirectory.
 - Check `self.single_iter` to distinguish single-iteration vs. full runs.
 
+**Modules with a post-loop aggregation step** (like `PostProcessIBDSummary`) should guard that step behind `not self.single_iter`. In single-iter mode, `execute()` calls `_single_iter(self.iter_n)` directly and returns — the aggregation step is never reached. This means running a single iteration only writes that iteration's intermediate file; the final aggregated output (e.g. `ibd_summary.tsv`) won't be created or updated until the full loop runs. To get an up-to-date aggregated file after a single-iter run, re-run the full loop (already-complete iterations will be skipped via `is_iter_complete`).
+
 ## SNP density and MAF distribution
 
 Simulated VCFs are thinned to match a realistic SNP density and minor allele frequency distribution, controlled by `ukb_snps.pkl`. A default pickle derived from UK Biobank genotype data is included. To generate your own:
@@ -585,7 +593,7 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
     ├── simulate.py           # simulation orchestrator
     ├── simulations.py        # core simulation logic (msprime, VCF, hap-ibd, TMRCA)
     ├── post_process.py       # post-processing orchestrator, PostProcessor ABC
-    ├── post_modules.py       # built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes
+    ├── post_modules.py       # built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes, IBD summary
     ├── plot_Ne.py            # plot Ne estimates vs true Ne
     ├── demography.py         # demographic model definitions
     ├── wf_pedigree.py        # Wright-Fisher pedigree generation
