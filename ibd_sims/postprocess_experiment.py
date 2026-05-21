@@ -199,7 +199,8 @@ def postprocess_commands(yaml_file, no_wait=False, no_local=False):
         cmd = [f"--set override_yaml={exp_dir}/postprocess.yaml",
                f"--set post_process={name}"]
 
-        for arg in row["args"].split(","):
+        args_str = row["args"] if pd.notna(row["args"]) else ""
+        for arg in (args_str.split(",") if args_str else []):
             val = "null" if pd.isna(row[arg]) else row[arg]
             cmd.append(f"--set {name}.{arg}={val}")
 
