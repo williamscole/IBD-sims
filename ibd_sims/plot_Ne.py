@@ -244,6 +244,58 @@ def plot_ne_estimates(
     return fig, (ax_left, ax_right)
 
 
+# ── Pickle helpers ────────────────────────────────────────────────────────────
+
+_DISPLAY_TO_METHOD = {v: k for k, v in _METHOD_DISPLAY.items()}
+
+
+def _parse_label(label: str) -> dict:
+    """Parse a plot label string into a structured dict of metadata fields.
+
+    Label format: "{demo}\\n{method_display} | rep={rep} | key=val | ..."
+    """
+    demo_part, rest = label.split("\n", 1)
+    parts = [p.strip() for p in rest.split("|")]
+    method_display = parts[0].strip()
+    meta: dict = {
+        "demo":   demo_part,
+        "method": _DISPLAY_TO_METHOD.get(method_display, method_display),
+    }
+    for part in parts[1:]:
+        if "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        k, v = k.strip(), v.strip()
+        # coerce booleans and numbers
+        if v.lower() == "true":
+            v = True
+        elif v.lower() == "false":
+            v = False
+        else:
+            for cast in (int, float):
+                try:
+                    v = cast(v)
+                    break
+                except ValueError:
+                    pass
+        meta[k] = v
+    return meta
+
+
+def _data_dict_to_records(data_dict: dict) -> list[dict]:
+    """Convert the {label: [df, ...]} data_dict into a list of structured records.
+
+    Each record has parsed metadata fields (demo, method, rep, any postprocess
+    args) plus a 'dfs' key containing the list of per-iteration DataFrames.
+    """
+    records = []
+    for label, dfs in data_dict.items():
+        record = _parse_label(label)
+        record["dfs"] = dfs
+        records.append(record)
+    return records
+
+
 # ── Data conversion ───────────────────────────────────────────────────────────
 
 def _results_to_data_dict(
@@ -366,8 +418,8 @@ def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False) -> None:
 
         if save_pickle:
             pickle_payload["demos"][demo] = {
-                "data_dict": data_dict,
-                "truth_df":  truth_df,
+                "records":  _data_dict_to_records(data_dict),
+                "truth_df": truth_df,
             }
 
     if save_pickle:
