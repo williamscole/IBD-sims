@@ -1,7 +1,7 @@
 experiment: main_experiment
 
 # These HAVE to be shared across simulations
-iter: 25
+iter: 50
 samples: 1000
 sim_workers: 30
 
