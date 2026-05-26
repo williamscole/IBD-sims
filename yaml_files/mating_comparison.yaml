@@ -1,0 +1,33 @@
+experiment: mating_comparison
+
+iter: 25
+samples: 1000
+sim_workers: 30
+
+gb: 8
+sim_min: 30
+nthreads: 8
+keep_all_files: true
+
+end_chr:
+  30: {}
+
+demographies:
+  constant_Ne_10k:
+    object: constant_Ne
+    path: ibd_sims/demography.py
+
+mating:
+  DTWF_mono:
+    pedigree_mode: true
+    mating: mono
+    gen_end: 25
+    pedigree_file: null
+
+  DTWF_di:
+    pedigree_mode: true
+    mating: di
+    gen_end: 25
+    pedigree_file: null
+
+post_processing: none
