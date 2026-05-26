@@ -40,19 +40,45 @@ _FAILED_STATES = {"FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY", "NODE_FAIL"
 
 
 def _sacct_state(job_id):
-    """Query Slurm accounting for the final state of a job.
+    """Query Slurm accounting for the final state of a single job.
 
     Used as a fallback when submitit reports UNKNOWN — this happens for
     array tasks that completed and aged out of squeue before submitit's
     own sacct query finds them.
     """
+    return _sacct_states_batch([job_id]).get(str(job_id), "UNKNOWN")
+
+
+def _sacct_states_batch(job_ids):
+    """Query sacct for multiple job IDs in a single subprocess call.
+
+    Returns a dict mapping job_id (str) -> state (str). Step entries
+    (.batch, .extern, etc.) are filtered out so only the parent job
+    state is returned.
+    """
+    if not job_ids:
+        return {}
+    ids_str = ",".join(str(j) for j in job_ids)
     result = subprocess.run(
-        ["sacct", "-j", str(job_id), "--format=State", "--noheader", "-P", "--parsable2"],
+        ["sacct", "-j", ids_str, "--format=JobID,State", "--noheader", "-P", "--parsable2"],
         capture_output=True, text=True,
     )
-    # First line is the job-level state (skip .batch and .extern steps)
-    lines = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
-    return lines[0] if lines else "UNKNOWN"
+    states = {}
+    for line in result.stdout.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|")
+        if len(parts) < 2:
+            continue
+        job_id_field, state = parts[0], parts[1]
+        # Skip step entries (.batch, .extern, etc.)
+        if "." in job_id_field:
+            continue
+        # Keep only the first occurrence (parent job row)
+        if job_id_field not in states:
+            states[job_id_field] = state
+    return states
 
 
 def _release_if_held(job_id):
@@ -122,9 +148,11 @@ def wait_for_jobs(jobs, path=None, end_chr=None):
     pending = list(jobs)
     failed = []
     while pending:
+        # Single sacct call for all pending jobs instead of one per job
+        states = _sacct_states_batch([job.job_id for job in pending])
         still_pending = []
         for job in pending:
-            state = _sacct_state(job.job_id)
+            state = states.get(str(job.job_id), "UNKNOWN")
             if state == "COMPLETED":
                 pass
             elif state in _FAILED_STATES:
