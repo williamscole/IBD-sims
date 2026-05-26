@@ -1,8 +1,9 @@
 experiment: test_experiment
 
 # These HAVE to be shared across simulations
-iter: 10
+iter: 5
 samples: 1000
+sim_workers: 30
 
 # These can change across simulations
 gb: 8

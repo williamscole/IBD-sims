@@ -1,6 +1,6 @@
 experiment_directory: test_experiment
 
-postprocess: [ibdne, hapne_ibd]
+postprocess: [ibdne, hapne_ibd, ibd_summary]
 
 ibdne:
   path: ibd_sims/post_modules.py
@@ -12,9 +12,9 @@ ibdne:
   nboots: 80
   nits: 1000
   npairs: 0
-  workers: 8
-  mem_gb: 16
-  time_min: 120
+  workers: 16
+  mem_gb: 8
+  time_min: 240
 
   combo_args:
     filtersamples: [true, false]
@@ -30,7 +30,6 @@ ibdne:
       filtersamples: true
       filter: null
 
-
 hapne_ibd:
   path: ibd_sims/post_modules.py
   object: PostProcessHapNeIBD
@@ -40,3 +39,11 @@ hapne_ibd:
 
   combo_args:
     filter: [null, related, unrelated]
+
+ibd_summary:
+  path: ibd_sims/post_modules.py
+  object: PostProcessIBDSummary
+  mem_gb: 1
+  time_min: 10
+  workers: 1
+  filters: [null, related, unrelated]
