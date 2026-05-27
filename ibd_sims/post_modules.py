@@ -177,6 +177,8 @@ class PostProcessHapNeLD(PostProcessor):
 
         population_name = filtering if _needs_filtering(filtering) else "unfiltered"
 
+        thin = getattr(self._get_sub_config(), "thin", None)
+
         run_hapne_ld(
             vcf_file=prefix,
             input_map=f"{prefix}.map",
@@ -185,6 +187,7 @@ class PostProcessHapNeLD(PostProcessor):
             end_chr=self.config.end_chr,
             workers=self._get_resource("workers"),
             keep_file=keep_file,
+            thin=thin,
         )
 
 

@@ -254,6 +254,7 @@ def run_hapne_ld(
     genome_build: str = "grch37",
     workers: int = 1,
     keep_file: str = None,
+    thin: float = None,
 ):
     """Run the full HapNe-LD pipeline on simulated data."""
 
@@ -286,6 +287,7 @@ def run_hapne_ld(
             vcf_loc = hapne.convert.tools.get_vcf_location(config)
             keep = config.get("CONFIG", "keep", fallback=None)
             keep_command = f"--keep {keep}" if keep else ""
+            thin_command = f"--thin {thin}" if thin is not None else ""
 
             for ii in range(len(regions)):
                 region = regions.iloc[ii]
@@ -300,6 +302,7 @@ def run_hapne_ld(
                     f"plink --vcf {vcf_loc}.vcf.gz "
                     f"--make-bed "
                     f"{keep_command} "
+                    f"{thin_command} "
                     f"--out {save_in}/{region['NAME']} "
                     f"--cm-map {map_loc} "
                     f"--chr {chrom} "
@@ -322,6 +325,29 @@ def run_hapne_ld(
 
     else:
         tmp_dir_map, map_pattern = hapne_tmp_map(input_map)
+
+        if thin is not None:
+            # Override HapNe's built-in split_convert_vcf to inject --thin.
+            _orig_split_convert_vcf = hapne.convert.tools.split_convert_vcf
+
+            def _thinned_split_convert_vcf(config: ConfigParser) -> None:
+                import re
+                # Temporarily monkey-patch os.system to inject --thin into
+                # every plink --make-bed call issued by the original function.
+                _orig_system = os.system
+
+                def _patched_system(cmd: str):
+                    if "--make-bed" in cmd and "--thin" not in cmd:
+                        cmd = cmd.rstrip() + f" --thin {thin}"
+                    return _orig_system(cmd)
+
+                os.system = _patched_system
+                try:
+                    _orig_split_convert_vcf(config)
+                finally:
+                    os.system = _orig_system
+
+            hapne.convert.tools.split_convert_vcf = _thinned_split_convert_vcf
 
     try:
         hapne_config = ConfigParser()
