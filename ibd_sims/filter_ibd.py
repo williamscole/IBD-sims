@@ -219,7 +219,7 @@ def get_nodes(ibd_path, n_samples, filtering):
 
     print(f"No cached node file found for '{filtering}', computing fresh.")
     all_nodes = _read_all_nodes(ibd_path, n_samples)
-    target = n_samples // 10
+    target = n_samples // 4
     ibd_df_full = pd.read_csv(ibd_path, sep="\\s+", header=None)
 
     if filtering == "random":
@@ -270,7 +270,7 @@ def write_samples(ibd_path, n_samples):
     """
     ibd_df = pd.read_csv(ibd_path, sep="\\s+", header=None)
     all_nodes = _read_all_nodes(ibd_path, n_samples)
-    target = n_samples // 10
+    target = n_samples // 4
 
     # random — no kinship needed
     random_nodes = set(np.random.choice(list(all_nodes), target, replace=False))
