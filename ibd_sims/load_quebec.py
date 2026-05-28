@@ -69,9 +69,14 @@ def load_random_50000(chrom, args):
 
     ts = tszip.decompress(f"{PATH}/chr{chrom}_random_50000.trees.tsz")
 
-    node_df = get_node_table(ts)
+    n_samples = ts.num_samples // 2
 
-    n_samples = node_df.shape[0] // 2
+    expected = 50000
+    if n_samples != expected:
+        raise ValueError(
+            f"chr{chrom} simplified tree has {n_samples} individuals, expected {expected}. "
+            f"Re-run simplify_quebec to fix cross-chromosome inconsistency."
+        )
 
     random_nodes = np.random.choice(np.arange(n_samples), args.get("samples", 1000), replace=False) * 2
     random_nodes = np.sort(np.concatenate((random_nodes, random_nodes+1)))
