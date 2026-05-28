@@ -80,7 +80,19 @@ def write_vcf(ts, output, chrom, rate, seed, snps_pkl="ukb_snps.pkl"):
     map_df[["chrom", "rsid", "cm", "bp"]].to_csv(f"{output}.map", header=False, index=False, sep=" ")
 
     with gzip.open(f"{output}.vcf.gz", "wt") as f:
-        out_ts.write_vcf(f, contig_id=str(chrom))
+        # Build sample individual list ordered by first sample node.
+        # After simplify(samples=sorted_random_nodes), sample nodes are numbered
+        # 0,1,2,... so individual j has nodes 2j/2j+1 — matching get_node's
+        # tsk_j -> node 2j assumption. Using explicit names ensures bcftools
+        # concat sees consistent tsk_0..tsk_N headers across chromosomes.
+        seen = {}
+        for n in out_ts.samples():
+            i = out_ts.node(n).individual
+            if i >= 0 and i not in seen:
+                seen[i] = n
+        sample_individuals = sorted(seen.keys(), key=lambda i: seen[i])
+        individual_names = [f"tsk_{j}" for j in range(len(sample_individuals))]
+        out_ts.write_vcf(f, contig_id=str(chrom), individuals=sample_individuals, individual_names=individual_names)
 
     print(f"Wrote VCF: {output}.vcf.gz")
 
