@@ -57,6 +57,47 @@ def simplify_quebec(chrom, seed=42):
 
     ts = ts.simplify(samples=chr_nodes_to_keep)
 
+    # Reorder individual table so current-gen individuals are in keep_ids order.
+    # ts.simplify preserves original individual table order, which differs across
+    # chromosomes — this makes tsk_N VCF headers consistent for bcftools concat.
+    tables = ts.dump_tables()
+    old_individuals = tables.individuals.copy()
+
+    name_to_idx = {
+        str(ts.individual(i).metadata["individual_name"]): i
+        for i in range(ts.num_individuals)
+        if "individual_name" in ts.individual(i).metadata
+    }
+
+    keep_set = set(keep_ids)
+    new_order = (
+        [name_to_idx[pid] for pid in keep_ids] +
+        [i for i in range(ts.num_individuals)
+         if str(ts.individual(i).metadata.get("individual_name", "")) not in keep_set]
+    )
+
+    old_to_new = np.empty(ts.num_individuals, dtype=np.int32)
+    for new_idx, old_idx in enumerate(new_order):
+        old_to_new[old_idx] = new_idx
+
+    tables.individuals.clear()
+    for old_idx in new_order:
+        row = old_individuals[old_idx]
+        new_parents = [old_to_new[p] if p >= 0 else -1 for p in row.parents]
+        tables.individuals.append(
+            flags=row.flags,
+            location=row.location,
+            parents=new_parents,
+            metadata=row.metadata,
+        )
+
+    indiv_col = tables.nodes.individual.copy()
+    mask = indiv_col >= 0
+    indiv_col[mask] = old_to_new[indiv_col[mask]]
+    tables.nodes.individual = indiv_col
+
+    ts = tables.tree_sequence()
+
     tszip.compress(ts, f"{PATH}/chr{chrom}_random_50000.trees.tsz")
 
 def load_random_50000(chrom, args):

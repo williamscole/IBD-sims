@@ -80,13 +80,7 @@ def write_vcf(ts, output, chrom, rate, seed, snps_pkl="ukb_snps.pkl"):
     map_df[["chrom", "rsid", "cm", "bp"]].to_csv(f"{output}.map", header=False, index=False, sep=" ")
 
     with gzip.open(f"{output}.vcf.gz", "wt") as f:
-
-        individual_order = sorted(
-            range(out_ts.num_individuals),
-            key=lambda i: out_ts.individual(i).metadata.get("individual_name")
-        )
-        vcf_sample_ids = [out_ts.individual(i).metadata.get("individual_name") for i in individual_order]
-        out_ts.write_vcf(f, contig_id=str(chrom), individuals=individual_order, individual_names=vcf_sample_ids)
+        out_ts.write_vcf(f, contig_id=str(chrom))
 
     print(f"Wrote VCF: {output}.vcf.gz")
 
