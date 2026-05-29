@@ -540,11 +540,13 @@ def compute_rmse_table(
             "label":         "random",
             "ibdne_crit":    {"filter": "random", "filtersamples": False},
             "hapne_crit":    {"filter": "random"},
+            "hapne_empty":   False,
         },
         {
             "label":         r"\makecell[l]{random\\(filtersamples=True)}",
             "ibdne_crit":    {"filter": "random", "filtersamples": True},
             "hapne_crit":    {"filter": "random"},
+            "hapne_empty":   True,
         },
     ]
 
@@ -553,7 +555,7 @@ def compute_rmse_table(
 
     # ── collect results ────────────────────────────────────────────────────────
     # {demo: [ {(method, gen_range): rmse | None}, ... ]}  one dict per row config
-    all_rows: list[tuple[str, str, dict]] = []  # (demo, label, rmse_dict)
+    all_rows: list[tuple[str, str, dict, bool]] = []  # (demo, label, rmse_dict, hapne_empty)
 
     for demo, demo_payload in sorted(demos_data.items()):
         truth_df = demo_payload["truth_df"]
@@ -573,7 +575,7 @@ def compute_rmse_table(
                     rmse_dict[(method, gr)] = _rmse_for_record(
                         pooled, truth_df, gr, log_scale
                     )
-            all_rows.append((demo, cfg["label"], rmse_dict))
+            all_rows.append((demo, cfg["label"], rmse_dict, cfg["hapne_empty"]))
 
     # ── build LaTeX table ──────────────────────────────────────────────────────
     method_display = {"ibdne": "IBDNe", "hapne_ibd": "HapNe-IBD"}
@@ -598,16 +600,19 @@ def compute_rmse_table(
 
     # group rows by demo; emit \midrule between demo groups, \hline between rows
     # within a group
-    demos = list(dict.fromkeys(demo for demo, _, _ in all_rows))  # ordered unique
+    demos = list(dict.fromkeys(demo for demo, _, _, _ in all_rows))  # ordered unique
     for d_idx, demo in enumerate(demos):
-        demo_rows = [(lbl, rd) for (dm, lbl, rd) in all_rows if dm == demo]
-        for r_idx, (label, rmse_dict) in enumerate(demo_rows):
+        demo_rows = [(lbl, rd, he) for (dm, lbl, rd, he) in all_rows if dm == demo]
+        for r_idx, (label, rmse_dict, hapne_empty) in enumerate(demo_rows):
             demo_cell = demo if r_idx == 0 else ""
             cells = []
             for m in methods:
                 for gr in gen_ranges:
-                    val = rmse_dict.get((m, gr))
-                    cells.append(f"{val:.3f}" if val is not None else "---")
+                    if hapne_empty and m == "hapne_ibd":
+                        cells.append("")
+                    else:
+                        val = rmse_dict.get((m, gr))
+                        cells.append(f"{val:.3f}" if val is not None else "---")
             lines.append(
                 "    " + demo_cell + " & " + label + " & "
                 + " & ".join(cells) + r" \\"
