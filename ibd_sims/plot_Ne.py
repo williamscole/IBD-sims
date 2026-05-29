@@ -500,29 +500,57 @@ def _select_records(
     return out
 
 
+_FILTER_ORDER = ["unfiltered", "random", "related", "unrelated"]
+
+
+def _build_row_configs(filter_values: list[str]) -> list[dict]:
+    """
+    For each filter value produce two row configs:
+      - filtersamples=False (IBDNe) / no filtersamples constraint (HapNe-IBD)
+      - filtersamples=True  (IBDNe) / HapNe-IBD cells left empty
+
+    'unfiltered' gets only a single row (filtersamples not applicable).
+    """
+    configs = []
+    for fv in filter_values:
+        configs.append({
+            "label":       fv,
+            "ibdne_crit":  {"filter": fv, "filtersamples": False},
+            "hapne_crit":  {"filter": fv},
+            "hapne_empty": False,
+        })
+        configs.append({
+                "label":       r"\makecell[l]{" + fv + r"\\(filtersamples=True)}",
+                "ibdne_crit":  {"filter": fv, "filtersamples": True},
+                "hapne_crit":  {"filter": fv},
+                "hapne_empty": True,
+            })
+    return configs
+
+
 def compute_rmse_table(
     pickle_path: str | Path,
     gen_ranges: list[tuple[int, int]] | None = None,
     log_scale: bool = True,
+    filter_values: list[str] | None = None,
 ) -> None:
     """
     Load Ne_data.pkl and print a LaTeX table of RMSE for IBDNe and HapNe-IBD.
 
-    Two rows per demographic scenario:
-      1. random               — IBDNe: filter=random; HapNe-IBD: filter=random, filtersamples=False
-      2. random               — IBDNe: filter=random (same); HapNe-IBD: filter=random, filtersamples=True
-         (filtersamples=True)
-
-    IBDNe uses filtersamples=False for both rows because sample filtering is a
-    HapNe-IBD-side step that doesn't affect IBDNe input.
+    For each filter value two rows are produced per demographic scenario:
+      - filtersamples=False for IBDNe; HapNe-IBD uses the same filter (no
+        filtersamples distinction for HapNe-IBD)
+      - filtersamples=True for IBDNe; HapNe-IBD cells are left empty
 
     RMSE is computed on log10(Ne) by default (log_scale=True).
 
     Parameters
     ----------
-    pickle_path : path to Ne_data.pkl produced by plot(..., save_pickle=True)
-    gen_ranges  : list of (g_lo, g_hi) tuples; defaults to [(0, 50), (0, 10)]
-    log_scale   : if True, compute RMSE on log10(Ne)
+    pickle_path    : path to Ne_data.pkl produced by plot(..., save_pickle=True)
+    gen_ranges     : list of (g_lo, g_hi) tuples; defaults to [(0, 50), (0, 10)]
+    log_scale      : if True, compute RMSE on log10(Ne)
+    filter_values  : filter values to include; defaults to all found in the data,
+                     ordered by _FILTER_ORDER
     """
     if gen_ranges is None:
         gen_ranges = [(0, 50), (0, 10)]
@@ -533,22 +561,18 @@ def compute_rmse_table(
     demos_data = payload["demos"]
     scale_str  = r"$\log_{10} N_e$" if log_scale else r"$N_e$"
 
-    # Two row configurations.  For HapNe-IBD, filtersamples is irrelevant so we
-    # always match filter=random without constraining filtersamples.
-    ROW_CONFIGS = [
-        {
-            "label":         "random",
-            "ibdne_crit":    {"filter": "random", "filtersamples": False},
-            "hapne_crit":    {"filter": "random"},
-            "hapne_empty":   False,
-        },
-        {
-            "label":         r"\makecell[l]{random\\(filtersamples=True)}",
-            "ibdne_crit":    {"filter": "random", "filtersamples": True},
-            "hapne_crit":    {"filter": "random"},
-            "hapne_empty":   True,
-        },
-    ]
+    # Detect filter values from data if not specified
+    if filter_values is None:
+        found = set()
+        for demo_payload in demos_data.values():
+            for r in demo_payload["records"]:
+                fv = r.get("filter")
+                if fv is not None:
+                    found.add(fv)
+        filter_values = [f for f in _FILTER_ORDER if f in found] + \
+                        sorted(found - set(_FILTER_ORDER))
+
+    ROW_CONFIGS = _build_row_configs(filter_values)
 
     methods = ["ibdne", "hapne_ibd"]
     method_crit_key = {"ibdne": "ibdne_crit", "hapne_ibd": "hapne_crit"}
