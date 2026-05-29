@@ -540,7 +540,7 @@ def compute_rmse_table(
     # ── build LaTeX table ──────────────────────────────────────────────────────
     method_display = {"ibdne": "IBDNe", "hapne_ibd": "HapNe-IBD"}
     col_headers = [
-        f"{method_display[m]} ({g_lo}--{g_hi} gen)"
+        r"\makecell{" + method_display[m] + r"\\" + f"({g_lo}--{g_hi} gen)" + "}"
         for m in methods
         for (g_lo, g_hi) in gen_ranges
     ]
