@@ -485,19 +485,19 @@ def _rmse_for_record(
 _RECORD_META_KEYS = {"demo", "method", "rep", "dfs", "iter"}
 
 
-def _filter_key(record: dict) -> tuple:
-    """Return a sorted tuple of (k, v) pairs for all postprocess args in record."""
-    return tuple(sorted(
-        (k, v) for k, v in record.items()
-        if k not in _RECORD_META_KEYS
-    ))
-
-
-def _filter_key_str(fk: tuple) -> str:
-    """Human-readable string for a filter key, e.g. 'min_len=2.0 | rm_rel=True'."""
-    if not fk:
-        return "unfiltered"
-    return " | ".join(f"{k}={v}" for k, v in fk)
+def _select_records(
+    records: list[dict],
+    method: str,
+    criteria: dict,
+) -> list[dict]:
+    """Return records matching method and all key=value pairs in criteria."""
+    out = []
+    for r in records:
+        if r["method"] != method:
+            continue
+        if all(r.get(k) == v for k, v in criteria.items()):
+            out.append(r)
+    return out
 
 
 def compute_rmse_table(
@@ -506,12 +506,17 @@ def compute_rmse_table(
     log_scale: bool = True,
 ) -> None:
     """
-    Load Ne_data.pkl and print a LaTeX table of RMSE for IBDNe and HapNe-IBD,
-    broken down by demographic scenario and filtering scheme.
+    Load Ne_data.pkl and print a LaTeX table of RMSE for IBDNe and HapNe-IBD.
 
-    RMSE is computed on log10(Ne) by default (log_scale=True), which is the
-    standard choice when Ne spans orders of magnitude.  Set log_scale=False
-    for raw Ne RMSE.
+    Two rows per demographic scenario:
+      1. random               — IBDNe: filter=random; HapNe-IBD: filter=random, filtersamples=False
+      2. random               — IBDNe: filter=random (same); HapNe-IBD: filter=random, filtersamples=True
+         (filtersamples=True)
+
+    IBDNe uses filtersamples=False for both rows because sample filtering is a
+    HapNe-IBD-side step that doesn't affect IBDNe input.
+
+    RMSE is computed on log10(Ne) by default (log_scale=True).
 
     Parameters
     ----------
@@ -526,41 +531,49 @@ def compute_rmse_table(
         payload = pickle.load(fh)
 
     demos_data = payload["demos"]
-    methods    = ["ibdne", "hapne_ibd"]
     scale_str  = r"$\log_{10} N_e$" if log_scale else r"$N_e$"
 
+    # Two row configurations.  For HapNe-IBD, filtersamples is irrelevant so we
+    # always match filter=random without constraining filtersamples.
+    ROW_CONFIGS = [
+        {
+            "label":         "random",
+            "ibdne_crit":    {"filter": "random", "filtersamples": False},
+            "hapne_crit":    {"filter": "random"},
+        },
+        {
+            "label":         r"\makecell[l]{random\\(filtersamples=True)}",
+            "ibdne_crit":    {"filter": "random", "filtersamples": True},
+            "hapne_crit":    {"filter": "random"},
+        },
+    ]
+
+    methods = ["ibdne", "hapne_ibd"]
+    method_crit_key = {"ibdne": "ibdne_crit", "hapne_ibd": "hapne_crit"}
+
     # ── collect results ────────────────────────────────────────────────────────
-    # rows keyed by (demo, filter_key); cols keyed by (method, gen_range)
-    rows: dict[tuple, dict] = {}
+    # {demo: [ {(method, gen_range): rmse | None}, ... ]}  one dict per row config
+    all_rows: list[tuple[str, str, dict]] = []  # (demo, label, rmse_dict)
 
     for demo, demo_payload in sorted(demos_data.items()):
         truth_df = demo_payload["truth_df"]
         records  = demo_payload["records"]
 
-        # find all filter schemes present across any method in this demo
-        all_filter_keys = sorted(set(_filter_key(r) for r in records))
-
-        for fk in all_filter_keys:
-            row_key = (demo, fk)
-            row: dict = {}
+        for cfg in ROW_CONFIGS:
+            rmse_dict: dict = {}
             for method in methods:
-                # pool iters across reps that share this exact filter scheme
-                matching = [
-                    r for r in records
-                    if r["method"] == method and _filter_key(r) == fk
-                ]
+                crit = cfg[method_crit_key[method]]
+                matching = _select_records(records, method, crit)
                 if not matching:
                     for gr in gen_ranges:
-                        row[(method, gr)] = None
+                        rmse_dict[(method, gr)] = None
                     continue
-
                 pooled = {"dfs": [df for r in matching for df in r["dfs"]]}
                 for gr in gen_ranges:
-                    row[(method, gr)] = _rmse_for_record(
+                    rmse_dict[(method, gr)] = _rmse_for_record(
                         pooled, truth_df, gr, log_scale
                     )
-
-            rows[row_key] = row
+            all_rows.append((demo, cfg["label"], rmse_dict))
 
     # ── build LaTeX table ──────────────────────────────────────────────────────
     method_display = {"ibdne": "IBDNe", "hapne_ibd": "HapNe-IBD"}
@@ -583,20 +596,29 @@ def compute_rmse_table(
         r"    \midrule",
     ]
 
-    prev_demo = None
-    for (demo, fk), row in rows.items():
-        demo_cell = demo if demo != prev_demo else ""
-        prev_demo = demo
-        filter_cell = _filter_key_str(fk)
-        cells = []
-        for m in methods:
-            for gr in gen_ranges:
-                val = row.get((m, gr))
-                cells.append(f"{val:.3f}" if val is not None else "---")
-        lines.append(
-            "    " + demo_cell + " & " + filter_cell + " & "
-            + " & ".join(cells) + r" \\"
-        )
+    # group rows by demo; emit \midrule between demo groups, \hline between rows
+    # within a group
+    demos = list(dict.fromkeys(demo for demo, _, _ in all_rows))  # ordered unique
+    for d_idx, demo in enumerate(demos):
+        demo_rows = [(lbl, rd) for (dm, lbl, rd) in all_rows if dm == demo]
+        for r_idx, (label, rmse_dict) in enumerate(demo_rows):
+            demo_cell = demo if r_idx == 0 else ""
+            cells = []
+            for m in methods:
+                for gr in gen_ranges:
+                    val = rmse_dict.get((m, gr))
+                    cells.append(f"{val:.3f}" if val is not None else "---")
+            lines.append(
+                "    " + demo_cell + " & " + label + " & "
+                + " & ".join(cells) + r" \\"
+            )
+            # \hline between rows within a demo group (not after the last row)
+            if r_idx < len(demo_rows) - 1:
+                lines.append(r"    \hline")
+
+        # \midrule between demo groups (not after the last demo)
+        if d_idx < len(demos) - 1:
+            lines.append(r"    \midrule")
 
     lines += [
         r"    \bottomrule",
