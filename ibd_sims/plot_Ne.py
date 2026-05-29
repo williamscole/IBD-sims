@@ -429,6 +429,152 @@ def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False) -> None:
         print(f"\nPickle saved: {pkl_path}")
 
 
+# ── RMSE table ────────────────────────────────────────────────────────────────
+
+def _rmse_for_record(
+    record: dict,
+    truth_df: pd.DataFrame,
+    gen_range: tuple[int, int],
+    log_scale: bool,
+) -> float | None:
+    """
+    Compute mean RMSE across all iters in a record against truth_df.
+
+    RMSE is computed on log10(Ne) if log_scale=True (default, recommended
+    because Ne spans orders of magnitude).  Truth is linearly interpolated
+    at each iter's GEN values within gen_range.
+
+    Returns None if truth_df is None or no GEN values fall in range.
+    """
+    if truth_df is None:
+        return None
+
+    g_lo, g_hi = gen_range
+    truth_gen = truth_df["GEN"].values.astype(float)
+    truth_ne  = truth_df["NE"].values.astype(float)
+
+    rmses = []
+    for df in record["dfs"]:
+        gens = df["GEN"].values.astype(float)
+        nes  = df["NE"].values.astype(float)
+
+        mask = (gens >= g_lo) & (gens <= g_hi)
+        if not mask.any():
+            continue
+
+        gens_in = gens[mask]
+        nes_in  = nes[mask]
+
+        # interpolate truth at the iter's GEN values
+        truth_at = np.interp(gens_in, truth_gen, truth_ne)
+
+        if log_scale:
+            # guard against zeros / negatives before log
+            ok = (nes_in > 0) & (truth_at > 0)
+            if not ok.any():
+                continue
+            diff = np.log10(nes_in[ok]) - np.log10(truth_at[ok])
+        else:
+            diff = nes_in - truth_at
+
+        rmses.append(np.sqrt(np.mean(diff ** 2)))
+
+    return float(np.mean(rmses)) if rmses else None
+
+
+def compute_rmse_table(
+    pickle_path: str | Path,
+    gen_ranges: list[tuple[int, int]] | None = None,
+    log_scale: bool = True,
+) -> None:
+    """
+    Load Ne_data.pkl and print a LaTeX table of RMSE for IBDNe and HapNe-IBD.
+
+    RMSE is computed on log10(Ne) by default (log_scale=True), which is the
+    standard choice when Ne spans orders of magnitude.  Set log_scale=False
+    for raw Ne RMSE.
+
+    Parameters
+    ----------
+    pickle_path : path to Ne_data.pkl produced by plot(..., save_pickle=True)
+    gen_ranges  : list of (g_lo, g_hi) tuples; defaults to [(0, 50), (0, 10)]
+    log_scale   : if True, compute RMSE on log10(Ne)
+    """
+    if gen_ranges is None:
+        gen_ranges = [(0, 50), (0, 10)]
+
+    with open(pickle_path, "rb") as fh:
+        payload = pickle.load(fh)
+
+    demos_data = payload["demos"]
+    methods    = ["ibdne", "hapne_ibd"]
+    scale_str  = r"$\log_{10} N_e$" if log_scale else r"$N_e$"
+
+    # ── collect results ────────────────────────────────────────────────────────
+    # rows: demo; cols: (method, gen_range)
+    rows: dict[str, dict] = {}
+
+    for demo, demo_payload in sorted(demos_data.items()):
+        truth_df = demo_payload["truth_df"]
+        records  = demo_payload["records"]
+
+        row: dict = {}
+        for method in methods:
+            method_records = [r for r in records if r["method"] == method]
+            if not method_records:
+                for gr in gen_ranges:
+                    row[(method, gr)] = None
+                continue
+
+            # pool all iters across reps for a single mean RMSE
+            pooled_record = {
+                "dfs": [df for r in method_records for df in r["dfs"]]
+            }
+            for gr in gen_ranges:
+                row[(method, gr)] = _rmse_for_record(
+                    pooled_record, truth_df, gr, log_scale
+                )
+
+        rows[demo] = row
+
+    # ── build LaTeX table ──────────────────────────────────────────────────────
+    method_display = {"ibdne": "IBDNe", "hapne_ibd": "HapNe-IBD"}
+    col_headers = [
+        f"{method_display[m]} ({g_lo}--{g_hi} gen)"
+        for m in methods
+        for (g_lo, g_hi) in gen_ranges
+    ]
+    n_cols = len(col_headers)
+    col_spec = "l" + "r" * n_cols
+
+    lines = [
+        r"\begin{table}[ht]",
+        r"  \centering",
+        f"  \\caption{{RMSE of {scale_str} Ne estimates vs.\ truth}}",
+        r"  \label{tab:rmse}",
+        f"  \\begin{{tabular}}{{{col_spec}}}",
+        r"    \toprule",
+        "    Demographic scenario & " + " & ".join(col_headers) + r" \\",
+        r"    \midrule",
+    ]
+
+    for demo, row in rows.items():
+        cells = []
+        for m in methods:
+            for gr in gen_ranges:
+                val = row.get((m, gr))
+                cells.append(f"{val:.3f}" if val is not None else "---")
+        lines.append("    " + demo + " & " + " & ".join(cells) + r" \\")
+
+    lines += [
+        r"    \bottomrule",
+        r"  \end{tabular}",
+        r"\end{table}",
+    ]
+
+    print("\n".join(lines))
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def _parse_args():
