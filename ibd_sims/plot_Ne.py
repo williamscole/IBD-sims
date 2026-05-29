@@ -482,13 +482,32 @@ def _rmse_for_record(
     return float(np.mean(rmses)) if rmses else None
 
 
+_RECORD_META_KEYS = {"demo", "method", "rep", "dfs", "iter"}
+
+
+def _filter_key(record: dict) -> tuple:
+    """Return a sorted tuple of (k, v) pairs for all postprocess args in record."""
+    return tuple(sorted(
+        (k, v) for k, v in record.items()
+        if k not in _RECORD_META_KEYS
+    ))
+
+
+def _filter_key_str(fk: tuple) -> str:
+    """Human-readable string for a filter key, e.g. 'min_len=2.0 | rm_rel=True'."""
+    if not fk:
+        return "unfiltered"
+    return " | ".join(f"{k}={v}" for k, v in fk)
+
+
 def compute_rmse_table(
     pickle_path: str | Path,
     gen_ranges: list[tuple[int, int]] | None = None,
     log_scale: bool = True,
 ) -> None:
     """
-    Load Ne_data.pkl and print a LaTeX table of RMSE for IBDNe and HapNe-IBD.
+    Load Ne_data.pkl and print a LaTeX table of RMSE for IBDNe and HapNe-IBD,
+    broken down by demographic scenario and filtering scheme.
 
     RMSE is computed on log10(Ne) by default (log_scale=True), which is the
     standard choice when Ne spans orders of magnitude.  Set log_scale=False
@@ -511,31 +530,37 @@ def compute_rmse_table(
     scale_str  = r"$\log_{10} N_e$" if log_scale else r"$N_e$"
 
     # ── collect results ────────────────────────────────────────────────────────
-    # rows: demo; cols: (method, gen_range)
-    rows: dict[str, dict] = {}
+    # rows keyed by (demo, filter_key); cols keyed by (method, gen_range)
+    rows: dict[tuple, dict] = {}
 
     for demo, demo_payload in sorted(demos_data.items()):
         truth_df = demo_payload["truth_df"]
         records  = demo_payload["records"]
 
-        row: dict = {}
-        for method in methods:
-            method_records = [r for r in records if r["method"] == method]
-            if not method_records:
+        # find all filter schemes present across any method in this demo
+        all_filter_keys = sorted(set(_filter_key(r) for r in records))
+
+        for fk in all_filter_keys:
+            row_key = (demo, fk)
+            row: dict = {}
+            for method in methods:
+                # pool iters across reps that share this exact filter scheme
+                matching = [
+                    r for r in records
+                    if r["method"] == method and _filter_key(r) == fk
+                ]
+                if not matching:
+                    for gr in gen_ranges:
+                        row[(method, gr)] = None
+                    continue
+
+                pooled = {"dfs": [df for r in matching for df in r["dfs"]]}
                 for gr in gen_ranges:
-                    row[(method, gr)] = None
-                continue
+                    row[(method, gr)] = _rmse_for_record(
+                        pooled, truth_df, gr, log_scale
+                    )
 
-            # pool all iters across reps for a single mean RMSE
-            pooled_record = {
-                "dfs": [df for r in method_records for df in r["dfs"]]
-            }
-            for gr in gen_ranges:
-                row[(method, gr)] = _rmse_for_record(
-                    pooled_record, truth_df, gr, log_scale
-                )
-
-        rows[demo] = row
+            rows[row_key] = row
 
     # ── build LaTeX table ──────────────────────────────────────────────────────
     method_display = {"ibdne": "IBDNe", "hapne_ibd": "HapNe-IBD"}
@@ -545,7 +570,7 @@ def compute_rmse_table(
         for (g_lo, g_hi) in gen_ranges
     ]
     n_cols = len(col_headers)
-    col_spec = "l" + "r" * n_cols
+    col_spec = "ll" + "r" * n_cols
 
     lines = [
         r"\begin{table}[ht]",
@@ -554,17 +579,24 @@ def compute_rmse_table(
         r"  \label{tab:rmse}",
         f"  \\begin{{tabular}}{{{col_spec}}}",
         r"    \toprule",
-        "    Demographic scenario & " + " & ".join(col_headers) + r" \\",
+        "    Demographic scenario & Filtering & " + " & ".join(col_headers) + r" \\",
         r"    \midrule",
     ]
 
-    for demo, row in rows.items():
+    prev_demo = None
+    for (demo, fk), row in rows.items():
+        demo_cell = demo if demo != prev_demo else ""
+        prev_demo = demo
+        filter_cell = _filter_key_str(fk)
         cells = []
         for m in methods:
             for gr in gen_ranges:
                 val = row.get((m, gr))
                 cells.append(f"{val:.3f}" if val is not None else "---")
-        lines.append("    " + demo + " & " + " & ".join(cells) + r" \\")
+        lines.append(
+            "    " + demo_cell + " & " + filter_cell + " & "
+            + " & ".join(cells) + r" \\"
+        )
 
     lines += [
         r"    \bottomrule",
