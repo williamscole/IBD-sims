@@ -43,9 +43,15 @@ class Kinship:
 
     def assign_related(self, tot_ibd, related=["1st", "2nd", "3rd"]):
         degree = "UN"
-        for d, (lw, up) in self.degrees.items():
-            if lw < tot_ibd <= up:
-                degree = d
+        # hap-ibd sums IBD-2 regions twice (once per haplotype pair), so the
+        # kinship sum for full siblings can exceed genome length (up to 2x).
+        # Treat anything above the 1st-degree lower bound as 1st degree.
+        if tot_ibd > self.degrees["1st"][0]:
+            degree = "1st"
+        else:
+            for d, (lw, up) in self.degrees.items():
+                if lw < tot_ibd <= up:
+                    degree = d
         return degree in related
 
 

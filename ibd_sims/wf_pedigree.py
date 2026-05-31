@@ -59,7 +59,7 @@ def create_pedigree(samples: int,
                     gen: int = -1,
                     mating_func: int = "di",
                     seed: int = np.random.randint(1, 1000000),
-                    population: str = "pop0"):
+                    population: str = "pop_0"):
 
     cur_gen = np.arange(samples)
 
