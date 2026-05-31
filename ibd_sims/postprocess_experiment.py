@@ -164,6 +164,13 @@ def postprocess_init(yaml_file):
 
     out_args = {i: exp_args[i] for i in postprocess_names}
 
+    # Pass through any extra top-level keys (e.g. subsample_frac) so they
+    # reach the postprocess runner via override_yaml.
+    structural_keys = {"postprocess", "experiment_directory"} | set(postprocess_names)
+    for key, val in exp_args.items():
+        if key not in structural_keys:
+            out_args[key] = val
+
     with open(exp_dir / 'postprocess.yaml', 'w') as outf:
         yaml.dump(out_args, outf)
 
