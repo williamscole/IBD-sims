@@ -33,15 +33,6 @@ demographies:
       sim_min: 120
       gb: 16
 
-custom_sims:
-  quebec:
-    object: load_random_50000
-    path: ibd_sims/load_quebec.py
-    resources:
-      gb: 32
-      sim_min: 30
-      end_chr: 22
-
 mating:
   DTWF_di:
     pedigree_mode: true
