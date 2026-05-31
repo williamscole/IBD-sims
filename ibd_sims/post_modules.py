@@ -171,7 +171,7 @@ class PostProcessHapNeLD(PostProcessor):
         if _needs_filtering(filtering):
             ibd_path = f"{prefix}.ibd.gz"
             # Ensure the node file exists (computes + caches if needed)
-            get_nodes(ibd_path, self.config.samples, filtering)
+            get_nodes(ibd_path, self.config.samples, filtering, getattr(self.config, "subsample_frac", 0.25))
             keep_file = get_node_file_path(ibd_path, filtering)
             print(f"[HapNe-LD] using keep file: {keep_file}")
 
@@ -240,7 +240,7 @@ class PostProcessHapNeIBD(PostProcessor):
                     return
 
                 # nb_samples for HapNe-IBD must reflect the filtered count
-                nodes = get_nodes(f"{prefix}.ibd.gz", self.config.samples, filtering)
+                nodes = get_nodes(f"{prefix}.ibd.gz", self.config.samples, filtering, getattr(self.config, "subsample_frac", 0.25))
                 nb_samples = len(nodes)
 
                 run_hapne_ibd(
@@ -312,7 +312,7 @@ class PostProcessIBDSummary(PostProcessor):
         rows = []
         for filtering in filters:
             if _needs_filtering(filtering):
-                nodes = get_nodes(ibd_path, self.config.samples, filtering)
+                nodes = get_nodes(ibd_path, self.config.samples, filtering, getattr(self.config, "subsample_frac", 0.25))
                 filtered = ibd_df[ibd_df[0].isin(nodes) & ibd_df[2].isin(nodes)]
                 n_samples = len(nodes)
                 filter_label = filtering

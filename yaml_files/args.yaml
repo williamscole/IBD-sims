@@ -33,6 +33,7 @@ custom_demo:
 
 ##### Sample information
 samples: 1000 # Number of samples
+subsample_frac: 0.25 # Fraction of samples to use for random/related/unrelated filtering
 
 # If a pedigree is applied
 pedigree:

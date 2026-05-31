@@ -224,7 +224,7 @@ def run_simulation_iter(path, iter_n):
     if args.get("keep_all_files", False):
         concat_vcf(prefix, end_chr)
         concat_ibd_files(prefix, end_chr, hbd=True)
-    write_samples(f"{prefix}.ibd.gz", args["samples"])
+    write_samples(f"{prefix}.ibd.gz", args["samples"], args.get("subsample_frac", 0.25))
 
     print(f"[iter {iter_n}] cleaning up per-chromosome files...")
     remove_ibd_chr_files(prefix, end_chr, hbd=False)
@@ -307,7 +307,7 @@ def run_post_processing(path, iter_n):
         concat_ibd_files(prefix, end_chr, hbd=True)
 
     # Write out samples for filtering
-    write_samples(f"{prefix}.ibd.gz", args["samples"])
+    write_samples(f"{prefix}.ibd.gz", args["samples"], args.get("subsample_frac", 0.25))
 
     # Post process
     postprocess(args, path=path, n_iter=None, iter_n=iter_n)

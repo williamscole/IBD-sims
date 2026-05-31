@@ -198,14 +198,14 @@ def get_node_file_path(ibd_path, filtering):
     return _node_file_path(ibd_path, filtering)
 
 
-def get_nodes(ibd_path, n_samples, filtering):
+def get_nodes(ibd_path, n_samples, filtering, subsample_frac=0.25):
     """Return the set of node IDs for a given filtering mode.
 
     Modes:
       'none'       — return all n_samples nodes (no filtering at all)
-      'random'     — randomly subsample to n_samples // 10
-      'related'    — subset enriched for close relatives (n_samples // 10)
-      'unrelated'  — subset pruned of close relatives (n_samples // 10)
+      'random'     — randomly subsample to round(n_samples * subsample_frac)
+      'related'    — subset enriched for close relatives
+      'unrelated'  — subset pruned of close relatives
 
     For 'random', 'related', 'unrelated': uses cached node files if available,
     otherwise computes and caches them.
@@ -225,7 +225,7 @@ def get_nodes(ibd_path, n_samples, filtering):
 
     print(f"No cached node file found for '{filtering}', computing fresh.")
     all_nodes = _read_all_nodes(ibd_path, n_samples)
-    target = n_samples // 4
+    target = round(n_samples * subsample_frac)
     ibd_df_full = pd.read_csv(ibd_path, sep="\\s+", header=None)
 
     if filtering == "random":
@@ -268,7 +268,7 @@ def get_nodes(ibd_path, n_samples, filtering):
 
 # --- Main public functions ---
 
-def write_samples(ibd_path, n_samples):
+def write_samples(ibd_path, n_samples, subsample_frac=0.25):
     """Compute and write node files for all three filtering modes.
 
     Creates iter{i}_random.txt, iter{i}_related.txt, iter{i}_unrelated.txt
@@ -276,7 +276,7 @@ def write_samples(ibd_path, n_samples):
     """
     ibd_df = pd.read_csv(ibd_path, sep="\\s+", header=None)
     all_nodes = _read_all_nodes(ibd_path, n_samples)
-    target = n_samples // 4
+    target = round(n_samples * subsample_frac)
 
     # random — no kinship needed
     random_nodes = set(np.random.choice(list(all_nodes), target, replace=False))
