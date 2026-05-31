@@ -280,7 +280,10 @@ def sim(path, iter_n, chrom):
     try:
         seed = int(sys.argv[4])
     except:
-        seed = np.random.randint(1, 1000000)
+        # Derive a deterministic, chromosome-specific seed so that parallel
+        # workers (which inherit the same numpy random state after fork) don't
+        # all produce the same simulation.
+        seed = (iteration_seed + int(chrom) * 1000003) % (2**32)
 
     yargs = yaml.safe_load(open(f"{path}/args.yaml"))
 
