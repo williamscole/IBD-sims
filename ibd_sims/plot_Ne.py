@@ -528,6 +528,13 @@ def _build_row_configs(filter_values: list[str]) -> list[dict]:
     return configs
 
 
+_DEMO_DISPLAY = {
+    "OOA2__DTWF_di":             "Out-of-Africa",
+    "constant_Ne_10k__DTWF_di":  r"Constant $N_e = 10{,}000$",
+    "constant_Ne_100k__DTWF_di": r"Constant $N_e = 100{,}000$",
+}
+
+
 def compute_rmse_table(
     pickle_path: str | Path,
     gen_ranges: list[tuple[int, int]] | None = None,
@@ -628,7 +635,7 @@ def compute_rmse_table(
     for d_idx, demo in enumerate(demos):
         demo_rows = [(lbl, rd, he) for (dm, lbl, rd, he) in all_rows if dm == demo]
         for r_idx, (label, rmse_dict, hapne_empty) in enumerate(demo_rows):
-            demo_cell = demo if r_idx == 0 else ""
+            demo_cell = _DEMO_DISPLAY.get(demo, demo) if r_idx == 0 else ""
             cells = []
             for m in methods:
                 for gr in gen_ranges:
