@@ -94,10 +94,16 @@ keep_all_files: <bool>    — If true, also retains VCF and HBD files (requires 
 gb: <int>                 — Memory (GB) for simulation Slurm jobs.
 sim_min: <int>            — Wall-time (minutes) for simulation Slurm jobs.
 nthreads: <int>           — Threads for hap-ibd.
+sim_workers: <int>        — Number of chromosomes to simulate in parallel within a per-iteration
+                            Slurm job (default: 1 = sequential). Memory is scaled by sim_workers.
+                            Not used in per-chromosome mode (iter < 3).
 iter: <int>               — Number of independent replicate simulations.
 samples: <int>            — Number of diploid individuals to simulate.
 end_chr: <int>            — Chromosomes to simulate. 30 = thirty 100Mb simulated chromosomes.
                             22 = real human autosomes (requires hapmap genetic maps).
+subsample_frac: <float>   — Fraction of samples used for related/unrelated/random filtering subsets
+                            (default: 0.25, i.e. N/4 individuals). The subsample size is
+                            round(samples * subsample_frac).
 
 custom_demo:              — Demographic model specification.
   path: <string>            Python file containing an msprime.Demography object.
@@ -118,17 +124,24 @@ label: <string>           — Multi-line label used to name the output directory
 ### Post-processing parameters
 
 post_process: <string>    — Comma-separated list of modules to run, or null to skip.
-                            Valid modules: ibdne, hapne_ibd, hapne_ld, purple_nodes
+                            Valid modules: ibdne, hapne_ibd, hapne_ld, purple_nodes, ibd_summary
 
 # Default resources (can be overridden per module):
 workers: <int>
 mem_gb: <int>
 time_min: <int>
 
+# IBD filtering modes (applies to filter: parameter in all post-processing modules):
+#   null / none  — All samples; no filtering
+#   random       — Random subsample of round(samples * subsample_frac) individuals
+#   related      — Subset enriched for 1st/2nd/3rd-degree relative pairs
+#   unrelated    — Subset pruned of 1st/2nd/3rd-degree relative pairs
+# Node lists are cached as iter{n}_random.txt, iter{n}_related.txt, iter{n}_unrelated.txt.
+
 # IBDNe-specific parameters:
 ibdne:
-  filter: <string>        — Sample filtering mode: unfiltered, related, unrelated, random
-  filtersamples: <bool>   — IBDNe's built-in sample filtering
+  filter: <string>        — Sample filtering mode (see above)
+  filtersamples: <bool>   — IBDNe's built-in internal sample filtering
   mincm: <float>          — Minimum IBD segment length in cM (default 2)
   trimcm: <float>         — Trim ends of segments by this many cM (default 0.2)
   gmin: <int>             — Minimum generations ago (default 1)
@@ -139,11 +152,19 @@ ibdne:
 
 # HapNe-IBD parameters:
 hapne_ibd:
-  filter: <string>        — Same filtering modes as ibdne
+  filter: <string>        — Sample filtering mode (see above)
 
 # HapNe-LD parameters (under development, may be slow/broken):
 hapne_ld:
-  filter: <string>
+  filter: <string>        — Sample filtering mode (see above)
+
+# IBD summary (PostProcessIBDSummary):
+# For each (iteration, filter) combo, computes: n_samples, n_segments, n_sharing_pairs,
+# mean_pairwise_ibd_cM, total_ibd_cM. Per-iteration results written to iter{n}.tsv;
+# all iterations concatenated into ibd_summary.tsv.
+ibd_summary:
+  mincm: <float>          — Minimum segment length threshold (default 2 cM)
+  filters: <list>         — Filter modes to summarise, e.g. [null, related, unrelated]
 
 ## Available demographic models (in ibd_sims/demography.py)
 
@@ -182,6 +203,9 @@ After simulation + post-processing, a run directory looks like:
   ├── iter1.ibd.gz              # concatenated IBD segments
   ├── iter1.map                 # concatenated genetic map
   ├── iter1.tmrca.gz            # TMRCA annotations
+  ├── iter1_random.txt          # cached random-subsample node list
+  ├── iter1_related.txt         # cached related-subset node list
+  ├── iter1_unrelated.txt       # cached unrelated-subset node list
   ├── ibdne/
   │   ├── 001/                  # first IBDNe run
   │   │   ├── args.yaml         # parameters for this analysis run
@@ -196,6 +220,10 @@ After simulation + post-processing, a run directory looks like:
   ├── purple_nodes/
   │   └── 001/
   │       └── iter1.npy
+  ├── ibd_summary/
+  │   └── 001/
+  │       ├── iter1.tsv         # per-iteration intermediate (one row per filter mode)
+  │       └── ibd_summary.tsv   # concatenated summary across all iterations
   ├── Ne_plot.png
   ├── slurm/                    # Slurm log files
   └── errors/                   # error logs
@@ -207,10 +235,12 @@ setup.yaml                — Machine-specific paths (hap-ibd jar, IBDNe jar, et
 environment.yaml          — Conda environment specification
 yaml_files/               — Pre-built simulation configs
 ibd_sims/
+  experiment.py           — Experiment manager (plan and track batches of simulations)
+  postprocess_experiment.py — Postprocessing experiment manager (batch post-processing)
   simulate.py             — Simulation orchestrator (Slurm or local dispatch)
   simulations.py          — Core simulation logic (msprime, VCF writing, hap-ibd, TMRCA)
   post_process.py         — Post-processing orchestrator and PostProcessor ABC
-  post_modules.py         — Built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes
+  post_modules.py         — Built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes, IBD summary
   plot_Ne.py              — Plotting Ne estimates vs truth
   demography.py           — Demographic model definitions
   wf_pedigree.py          — Wright-Fisher pedigree generation
@@ -220,6 +250,7 @@ ibd_sims/
   filter_ibd.py           — IBD sample filtering (related/unrelated/random subsets)
   purple.py               — Purple node matrix computation
   concat_tmrca.py         — Concatenate per-chromosome TMRCA files
+  analyze_experiment.py   — Load and compare Ne estimates across experiment runs
   utils.py                — CLI override utilities
   yaml_tools.py           — Batch YAML generation helper
 
@@ -245,12 +276,24 @@ Each chromosome within an iteration gets its own random seed.
 ## How sample filtering works
 
 The filter parameter in post-processing controls which samples' IBD segments are used:
-- unfiltered: all samples
-- random: random 10% subset
-- related: 10% subset enriched for close relatives (high total IBD sharing)
-- unrelated: 10% subset with close relatives pruned out
+- null / none: all samples, no filtering
+- random: random subsample of round(samples * subsample_frac) individuals (default: N/4)
+- related: subset of round(samples * subsample_frac) individuals enriched for close relatives
+  (1st/2nd/3rd degree), built by greedily adding pairs with the highest total IBD
+- unrelated: subset of round(samples * subsample_frac) individuals with close relatives pruned out,
+  built by graph-based independent-set selection over the kinship graph
 
-Filtering is computed from the IBD data itself. Node lists are cached as iter{n}_{mode}.txt files.
+Filtering thresholds for degree classification are based on fraction of the genome shared:
+- 1st degree: > sqrt(0.5) * genome_length cM
+- 2nd degree: sqrt(0.5) to sqrt(0.5) * genome_length cM (half of 1st)
+- 3rd degree: sqrt(0.125) to sqrt(0.25) * genome_length cM
+
+subsample_frac is a top-level YAML parameter (default: 0.25). It is used consistently across
+all filtering modes and all post-processing modules.
+
+Filtering is computed from the IBD data itself. Node lists are cached as
+iter{n}_random.txt, iter{n}_related.txt, iter{n}_unrelated.txt next to each IBD file.
+If a cached file exists it is reused; pass a fresh run to recompute.
 
 ## How to write a custom post-processing module
 
@@ -293,10 +336,12 @@ Key internals:
 ## Known issues and TODOs
 
 - HapNe-LD integration is slow and may not work correctly.
-- Run resumption (passing an existing output directory instead of a YAML) is under development.
-- There is no --no-wait option for simulation (only for postprocess).
+- Run resumption (passing an existing output directory instead of a YAML) is partially supported
+  but re-running only specific iterations is not yet implemented.
+- There is no global --max-jobs passthrough in `ibd_sims/experiment.py commands`; with --no-wait,
+  an experiment with many simulations can exceed the cluster's per-user Slurm queue limit.
 - Long-term goal: integrate ped-sim for more realistic IBD among close relatives.
-- Some older YAML configs (arg9+) use a legacy flat format without the post_process block.
+- Some older YAML configs (arg9–arg19) use a legacy flat format without the post_process block.
 
 ## Common troubleshooting
 
