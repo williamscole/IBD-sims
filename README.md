@@ -203,7 +203,7 @@ Line labels are built automatically from each subdirectory's `args.yaml` (demogr
 
 ## Experiment manager
 
-For running batches of simulations across multiple demographic histories, mating models, and genome configurations, use the experiment manager (`experiment.py`).
+For running batches of simulations across multiple demographic histories, mating models, and genome configurations, use the experiment manager (`ibd_sims/experiment.py`).
 
 ### Workflow
 
@@ -215,6 +215,7 @@ experiment: my_experiment
 # Fixed across all simulations
 iter: 50
 samples: 1000
+sim_workers: 30
 
 # Default resources (can be overridden per-demography or per-mating)
 gb: 8
@@ -243,7 +244,7 @@ demographies:
 custom_sims:           # these do NOT iterate over end_chr or mating
   quebec:
     object: load_random_10000
-    path: load_quebec.py
+    path: ibd_sims/load_quebec.py
     resources:
       gb: 32
 
@@ -262,13 +263,13 @@ Resource overrides follow a `max()` rule — if multiple axes specify `sim_min`,
 **2. Preview the experiment plan (no files created):**
 
 ```bash
-python experiment.py describe yaml_files/experiment.yaml
+python ibd_sims/experiment.py describe yaml_files/experiment.yaml
 ```
 
 **3. Initialise the experiment (creates directories and generates YAML files):**
 
 ```bash
-python experiment.py init yaml_files/experiment.yaml
+python ibd_sims/experiment.py init yaml_files/experiment.yaml
 ```
 
 This creates:
@@ -286,19 +287,19 @@ my_experiment/
 
 ```bash
 # All simulations (--no-wait is the default: all Slurm jobs submitted in parallel)
-python experiment.py commands yaml_files/experiment.yaml
+python ibd_sims/experiment.py commands yaml_files/experiment.yaml
 
 # Only simulations not yet complete
-python experiment.py commands yaml_files/experiment.yaml --pending-only
+python ibd_sims/experiment.py commands yaml_files/experiment.yaml --pending-only
 
 # Serialize: wait for each simulation to finish before submitting the next
-python experiment.py commands yaml_files/experiment.yaml --wait
+python ibd_sims/experiment.py commands yaml_files/experiment.yaml --wait
 ```
 
 **5. Check progress:**
 
 ```bash
-python experiment.py status yaml_files/experiment.yaml
+python ibd_sims/experiment.py status yaml_files/experiment.yaml
 ```
 
 ### Adding post-processing
@@ -311,7 +312,7 @@ python run.py postprocess my_experiment/constant_Ne_10k__DTWF_di__chr30/ --no-wa
 
 ## Postprocessing experiment manager
 
-For running batches of post-processing analyses across all simulations in an experiment — varying parameters like IBD filters or minimum segment length — use the postprocessing experiment manager (`postprocess_experiment.py`).
+For running batches of post-processing analyses across all simulations in an experiment — varying parameters like IBD filters or minimum segment length — use the postprocessing experiment manager (`ibd_sims/postprocess_experiment.py`).
 
 ### Workflow
 
@@ -320,7 +321,7 @@ For running batches of post-processing analyses across all simulations in an exp
 ```yaml
 experiment_directory: my_experiment
 
-postprocess: [ibdne, hapne_ibd]
+postprocess: [ibdne, hapne_ibd, ibd_summary]
 
 ibdne:
   path: ibd_sims/post_modules.py
@@ -340,6 +341,11 @@ ibdne:
     filtersamples: [true, false]
     filter: [null, related, unrelated]
 
+  add_combo:
+    combo1:
+      filtersamples: true
+      filter: null
+
   ignore_combo:
     combo1:
       filtersamples: true
@@ -354,6 +360,14 @@ hapne_ibd:
 
   combo_args:
     filter: [null, related, unrelated]
+
+ibd_summary:
+  path: ibd_sims/post_modules.py
+  object: PostProcessIBDSummary
+  mem_gb: 1
+  time_min: 10
+  workers: 1
+  filters: [null, related, unrelated]
 ```
 
 `combo_args` defines the axes to vary; every combination is generated automatically. `add_combo` and `ignore_combo` let you manually add or remove specific combinations.
@@ -380,6 +394,9 @@ This creates two files in `my_experiment/`:
 ```bash
 # Print all pending commands and write a bash script
 python ibd_sims/postprocess_experiment.py commands yaml_files/postprocess_experiment.yaml
+
+# Submit as Slurm jobs instead of running locally
+python ibd_sims/postprocess_experiment.py commands yaml_files/postprocess_experiment.yaml --no-local
 
 # With --no-wait to fire-and-forget Slurm job submission
 python ibd_sims/postprocess_experiment.py commands yaml_files/postprocess_experiment.yaml --no-wait
@@ -420,14 +437,18 @@ dir_name: ibd-sims          # subdirectory name within the run directory
 keep_all_files: false       # if true, also saves VCF and HBD files
 
 # Computational resources (simulation)
-gb: 8                       # memory in GB for simulation jobs
+gb: 8                       # memory in GB per simulation job
 sim_min: 30                 # wall-time in minutes for simulation jobs
 nthreads: 8                 # threads for hap-ibd
+sim_workers: 1              # number of chromosomes to simulate in parallel within
+                            # a per-iteration job (default: 1 = sequential)
 
 # Simulation
 iter: 50                    # number of independent replicates
 samples: 1000               # number of diploid individuals
 end_chr: 30                 # chromosomes to simulate (30 = 30x100Mb; 22 = real autosomes)
+subsample_frac: 0.25        # fraction of samples used for random/related/unrelated
+                            # subsets during filtering (default: 0.25, i.e. N/4)
 
 # Demographic model (one of custom_demo or custom_sim must be set)
 custom_demo:
@@ -445,6 +466,17 @@ pedigree:
   pedigree_file: null       # path to pre-existing pedigree file (optional)
 ```
 
+#### `sim_workers` and job mode
+
+The pipeline uses two submission modes depending on the number of replicates:
+
+- **Per-iteration mode** (default for `iter >= 3`): one Slurm job per replicate, all chromosomes run within that job. `sim_workers` controls how many chromosomes are simulated in parallel within the job (requires proportionally more CPUs, set via `cpus_per_task`). Memory is scaled by `sim_workers` automatically.
+- **Per-chromosome mode** (`iter < 3`): one Slurm job per (replicate, chromosome) pair; `sim_workers` is not used.
+
+#### `subsample_frac` and sample filtering
+
+When IBD filtering is enabled (`filter: related`, `filter: unrelated`, or `filter: random`), the pipeline subsamples to `round(samples * subsample_frac)` individuals. The default of 0.25 gives N/4 samples. The subsampled node lists are cached as `iter{n}_random.txt`, `iter{n}_related.txt`, and `iter{n}_unrelated.txt` next to each IBD file.
+
 ### Post-processing parameters
 
 Set `post_process` to a comma-separated list of modules to run, or `null` to skip all post-processing.
@@ -455,7 +487,90 @@ To run post-processing, edit the file or use `--set`:
 python run.py simulate yaml_files/arg1.yaml --set post_process=ibdne
 ```
 
-Each module has its own nested config block with `object` (Python class name), `path` (Python file), analysis parameters, and optional resource overrides.
+Each module has its own nested config block with `object` (Python class name), `path` (Python file), analysis parameters, and optional resource overrides (`workers`, `mem_gb`, `time_min`).
+
+#### IBD filtering
+
+The `filter` parameter (supported by IBDNe, HapNe-IBD, HapNe-LD, and IBD summary) controls which samples are included in the analysis:
+
+| Value | Behaviour |
+|-------|-----------|
+| `null` / `none` | All samples; no filtering |
+| `random` | Random subsample of `round(N * subsample_frac)` individuals |
+| `related` | Subset enriched for 1st/2nd/3rd-degree relative pairs |
+| `unrelated` | Subset pruned of 1st/2nd/3rd-degree relative pairs |
+
+#### Built-in post-processors
+
+**IBDNe** (`PostProcessIBDNe`):
+
+```yaml
+ibdne:
+  path: post_modules.py
+  object: PostProcessIBDNe
+  filter: null              # IBD filtering mode (see above)
+  filtersamples: false      # IBDNe's own internal sample-based filtering
+  mincm: 2                  # minimum IBD segment length (cM)
+  trimcm: 0.2               # IBD segment trimming (cM)
+  gmin: 1                   # minimum generation for Ne estimation
+  gmax: 300                 # maximum generation for Ne estimation
+  nboots: 80                # number of bootstrap replicates
+  nits: 1000                # number of EM iterations
+  npairs: 0                 # max pairs (0 = all)
+  workers: 8
+  mem_gb: 16
+  time_min: 120
+```
+
+**HapNe-IBD** (`PostProcessHapNeIBD`):
+
+```yaml
+hapne_ibd:
+  path: post_modules.py
+  object: PostProcessHapNeIBD
+  filter: null              # IBD filtering mode (see above)
+  workers: 4
+  mem_gb: 16
+  time_min: 120
+```
+
+**HapNe-LD** (`PostProcessHapNeLD`):
+
+```yaml
+hapne_ld:
+  path: post_modules.py
+  object: PostProcessHapNeLD
+  filter: null              # IBD filtering mode (see above)
+  workers: 4
+  mem_gb: 16
+  time_min: 120
+```
+
+**IBD Summary** (`PostProcessIBDSummary`):
+
+Summarises IBD segments across all iterations and filter modes. For each (iteration, filter) combination, computes: number of samples, number of IBD segments, number of sharing pairs, mean pairwise IBD (cM), and total IBD (cM). Per-iteration results are written to `iter{n}.tsv`; the full run is concatenated into `ibd_summary.tsv`.
+
+```yaml
+ibd_summary:
+  path: post_modules.py
+  object: PostProcessIBDSummary
+  mincm: 2                  # minimum segment length threshold (cM)
+  filters: [null, related, unrelated]   # filter modes to summarise
+  workers: 1
+  mem_gb: 1
+  time_min: 10
+```
+
+**Purple nodes** (`PostProcessPurple`):
+
+```yaml
+purple_nodes:
+  path: post_modules.py
+  object: PostProcessPurple
+  workers: 4
+  mem_gb: 8
+  time_min: 60
+```
 
 ## Output structure
 
@@ -465,6 +580,9 @@ run_directory/
 ├── iter1.ibd.gz              # concatenated IBD segments
 ├── iter1.map                 # concatenated genetic map
 ├── iter1.tmrca.gz            # TMRCA annotations
+├── iter1_random.txt          # cached random-subsample node list
+├── iter1_related.txt         # cached related-subset node list
+├── iter1_unrelated.txt       # cached unrelated-subset node list
 ├── ibdne/
 │   ├── 001/
 │   │   ├── args.yaml         # analysis config for this run
@@ -585,11 +703,11 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 
 ```
 ├── run.py                    # single entry point (simulate / postprocess / plot)
-├── experiment.py             # experiment manager (plan and track batches of simulations)
-├── ibd_sims/postprocess_experiment.py  # postprocessing experiment manager (batch post-processing across simulations)
 ├── setup.yaml                # machine-specific path configuration
 ├── yaml_files/               # per-experiment simulation configs
 └── ibd_sims/                 # pipeline source code
+    ├── experiment.py         # experiment manager (plan and track batches of simulations)
+    ├── postprocess_experiment.py  # postprocessing experiment manager (batch post-processing across simulations)
     ├── simulate.py           # simulation orchestrator
     ├── simulations.py        # core simulation logic (msprime, VCF, hap-ibd, TMRCA)
     ├── post_process.py       # post-processing orchestrator, PostProcessor ABC
@@ -603,18 +721,15 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
     ├── filter_ibd.py         # IBD filtering (related/unrelated/random subsets)
     ├── purple.py             # purple node matrix computation
     ├── concat_tmrca.py       # concatenate per-chromosome TMRCA files
+    ├── analyze_experiment.py # load and compare Ne estimates across experiment runs
     └── utils.py              # CLI override utilities
 ```
 
 ## TODO
 
-- [ ] In per-iteration mode, parallelize chromosome simulations within the same Slurm job (e.g. via `multiprocessing.Pool`). Currently chromosomes run sequentially inside `run_simulation_iter`; since each chromosome job is relatively lightweight, running several in parallel would make better use of the allocated node.
-- [ ] Add a global `--max-jobs` option to `experiment.py commands` that passes through to each generated `run.py simulate` command. Currently `--max-jobs` only limits jobs within a single simulation run, so with `--no-wait` (the default) an experiment with many simulations can submit more total Slurm jobs than the cluster's per-user queue limit.
-
-
-
+- [ ] Add a global `--max-jobs` option to `ibd_sims/experiment.py commands` that passes through to each generated `run.py simulate` command. Currently `--max-jobs` only limits jobs within a single simulation run, so with `--no-wait` (the default) an experiment with many simulations can submit more total Slurm jobs than the cluster's per-user queue limit.
 - [ ] Add *better* support for resumption of runs, e.g., re-running only some iterations.
 - [ ] Allow user to *not* provide hap-ibd path. Would default to exact IBD segments computed by `tskit`.
 - [ ] HapNe-LD currently is slow/does not work.
 - [ ] Long-term goal: integrate ped-sim for more realistic IBD in close relatives.
-- [ ] For a custom sim, the user needs to specify end_chr. The current strategy is hacky: put it under resources to override the top level end_chr. Low priority: implement in a better way. 
+- [ ] For a custom sim, the user needs to specify end_chr. The current strategy is hacky: put it under resources to override the top level end_chr. Low priority: implement in a better way.
