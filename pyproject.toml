@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ibd-sims"
+version = "0.1.0"
+description = "IBD simulation pipeline; ibd_sims.ne_results loads and summarises saved Ne estimates"
+requires-python = ">=3.10"
+dependencies = ["numpy", "pandas"]
+
+[tool.setuptools]
+packages = ["ibd_sims"]
