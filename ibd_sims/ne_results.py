@@ -250,7 +250,7 @@ def compute_rmse_table(
             for m in methods:
                 for gr in gen_ranges:
                     if hapne_empty and m == "hapne_ibd":
-                        cells.append("")
+                        cells.append("n/a")
                     else:
                         val = rmse_dict.get((m, gr))
                         cells.append(f"{val:.3f}" if val is not None else "---")
@@ -274,3 +274,82 @@ def compute_rmse_table(
 
     print("\n".join(lines))
 
+
+# ── RMSE by sample size ───────────────────────────────────────────────────────
+
+def compute_sample_size_rmse_table(
+    datasets: dict,
+    demos: list[str] | None = None,
+    filter_values: tuple[str, ...] = ("random",),
+    gen_ranges: tuple[tuple[int, int], ...] = ((0, 50), (0, 10)),
+    log_scale: bool = True,
+    caption: str | None = None,
+    label: str = "tab:rmse_sample_size",
+    placement: str = "H",
+) -> None:
+    """
+    Print a LaTeX table of RMSE for IBDNe and HapNe-IBD, one row per
+    (demographic scenario, sample size).
+
+    datasets : {n_label: data from load_ne_data()}, in row order, e.g.
+               {"250": ne_data, "1{,}000": sample_data}.  The keys are printed
+               verbatim in the n column, so the sample sizes are stated by the
+               caller rather than assumed in here.
+    """
+    if demos is None:
+        demos = ["OOA2__DTWF_di", "constant_Ne_10k__DTWF_di", "constant_Ne_100k__DTWF_di"]
+
+    methods = ["ibdne", "hapne_ibd"]
+    method_display = {"ibdne": "IBDNe", "hapne_ibd": "HapNe-IBD"}
+    scale_str = r"$\log_{10} N_e$" if log_scale else r"$N_e$"
+    if caption is None:
+        caption = (rf"RMSE of {scale_str} estimates vs.\ truth by sample size "
+                   rf"({'/'.join(filter_values)} node sampling only)")
+
+    col_headers = [
+        r"\makecell{" + method_display[m] + r"\\" + f"({g_lo}--{g_hi} gen)" + "}"
+        for m in methods
+        for (g_lo, g_hi) in gen_ranges
+    ]
+    col_spec = "ll" + "r" * len(col_headers)
+
+    lines = [
+        rf"\begin{{table}}[{placement}]",
+        r"  \centering",
+        rf"  \caption{{{caption}}}",
+        rf"  \label{{{label}}}",
+        rf"  \begin{{tabular}}{{{col_spec}}}",
+        r"    \toprule",
+        "    Demographic scenario & $n$ & " + " & ".join(col_headers) + r" \\",
+        r"    \midrule",
+    ]
+
+    for d_idx, demo in enumerate(demos):
+        for r_idx, (n_label, data) in enumerate(datasets.items()):
+            demo_payload = data["demos"].get(demo, {})
+            truth_df = demo_payload.get("truth_df")
+            records  = demo_payload.get("records", [])
+
+            cells = []
+            for method in methods:
+                matching = [
+                    r for r in records
+                    if r["method"] == method
+                    and r.get("filter") in filter_values
+                    and not r.get("filtersamples", False)      # HapNe records have no such key
+                ]
+                pooled = {"dfs": [df for r in matching for df in r["dfs"]]}
+                for gr in gen_ranges:
+                    val = _rmse_for_record(pooled, truth_df, gr, log_scale)
+                    cells.append(f"{val:.3f}" if val is not None else "---")
+
+            demo_cell = _DEMO_DISPLAY.get(demo, demo) if r_idx == 0 else ""
+            lines.append("    " + demo_cell + " & " + n_label + " & " + " & ".join(cells) + r" \\")
+            if r_idx < len(datasets) - 1:
+                lines.append(r"    \hline")
+
+        if d_idx < len(demos) - 1:
+            lines.append(r"    \midrule")
+
+    lines += [r"    \bottomrule", r"  \end{tabular}", r"\end{table}"]
+    print("\n".join(lines))
