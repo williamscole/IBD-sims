@@ -15,7 +15,7 @@ from pathlib import Path
 from write_vcf import write_vcf
 from wf_pedigree import create_pedigree
 from maf_buckets import SNPs, BUCKETS
-
+from ibd_from_ts import ts_ibd_pipeline
 
 import warnings
 
@@ -287,7 +287,10 @@ def sim(path, iter_n, chrom):
 
     yargs = yaml.safe_load(open(f"{path}/args.yaml"))
 
-    if yargs.get("keep_all_files", False):
+    # If true, skip all VCF creation, IBD calling steps
+    tskit_ibd = yargs.get("tskit_ibd", False)
+
+    if yargs.get("keep_all_files", False) and (not tskit_ibd):
         if subprocess.run(["which", "bcftools"], capture_output=True).returncode != 0:
             raise RuntimeError("keep_all_files is True but bcftools not found in PATH")
 
@@ -297,6 +300,7 @@ def sim(path, iter_n, chrom):
     yargs["iteration_seed"] = iteration_seed
     yargs["iter_n"] = iter_n
     yargs["chrom"] = chrom
+
  
     print(f"Random seed: {seed}")
 
@@ -325,12 +329,15 @@ def sim(path, iter_n, chrom):
 
     # log.write(f"\n\n{demography[0].debug() if len(demography)>0 else 'ts supplied!'}\n")
 
-
     prefix = f"{path}/iter{iter_n}_chr{chrom}"
 
-    write_vcf(ts, prefix, chrom, rate, seed, snps_pkl=config["maf_pickle"])
+    if tskit_ibd:
+        ts_ibd_pipeline(ts, path, iter_n, chrom, rate)
 
-    run_hapibd(prefix, yargs["gb"], hapibd_jar=config["hap_ibd_jar"])
+    else:
+        write_vcf(ts, prefix, chrom, rate, seed, snps_pkl=config["maf_pickle"])
+
+        run_hapibd(prefix, yargs["gb"], hapibd_jar=config["hap_ibd_jar"])
 
     add_tmrca(prefix, ts, False)
 
@@ -342,7 +349,7 @@ def sim(path, iter_n, chrom):
             df = pd.read_csv(f"{prefix}.ibd.gz", nrows=10, sep="\\s+", header=None)
 
         if df.shape[0] == 10:
-            if not yargs.get("keep_all_files", False):
+            if not yargs.get("keep_all_files", False) and (not tskit_ibd):
                 os.remove(f"{prefix}.vcf.gz")
                 os.remove(f"{prefix}.hbd.gz")
 
