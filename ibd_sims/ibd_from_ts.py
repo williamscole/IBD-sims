@@ -153,7 +153,7 @@ def write_samples(ts, path):
             f.write(f"tsk_{j}\n")
 
 
-def run_pipeline(ts, out_dir, iter_n=1, chrom=1, rate=1e-8, **ibd_kwargs):
+def ts_ibd_pipeline(ts, out_dir, iter_n=1, chrom=1, rate=1e-8, **ibd_kwargs):
     """ts -> IBD calls -> {out_dir}/iter{n}_chr{chrom}.ibd.gz and iter{n}.samples.
 
     File names follow the repo's convention. Extra kwargs (min_cm, gap_cm,
@@ -193,7 +193,7 @@ def main(argv=None):
           f"({time.time() - t0:.1f}s)")
 
     t0 = time.time()
-    df, prefix = run_pipeline(ts, a.out_dir, iter_n=a.iter_n, chrom=a.chrom, rate=a.rate,
+    df, prefix = ts_ibd_pipeline(ts, a.out_dir, iter_n=a.iter_n, chrom=a.chrom, rate=a.rate,
                               min_cm=a.min_cm, gap_cm=a.gap_cm,
                               min_span=a.min_span, max_time=a.max_time)
     print(f"Called {len(df)} IBD segments >= {a.min_cm} cM ({time.time() - t0:.1f}s)")
