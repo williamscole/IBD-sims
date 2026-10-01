@@ -6,14 +6,14 @@
 
 IBD-sims is a pipeline for simulating realistic Identity-By-Descent (IBD) segments under various demographic histories and mating models. Its primary purpose is evaluating IBDNe (a tool that infers effective population size, Ne, from IBD segments), but the simulated IBD data can feed any downstream analysis.
 
-The pipeline simulates ancestry with msprime, optionally prepending an explicit Wright-Fisher pedigree for recent generations (the DTWF model). Genotype data is generated, then IBD segments are detected from it using hap-ibd. Post-processing tools (IBDNe, HapNe-IBD) estimate Ne from the detected IBD, and plotting compares those estimates against the known truth.
+The pipeline simulates ancestry with msprime, optionally prepending an explicit Wright-Fisher pedigree for recent generations (the DTWF model). Genotype data is generated, then IBD segments are detected from it using hap-ibd. Alternatively, with `tskit_ibd: true`, IBD segments are called directly from the tree sequence (no VCF, no hap-ibd), which gives exact IBD and avoids the VCF/hap-ibd cost. Post-processing tools (IBDNe, HapNe-IBD) estimate Ne from the detected IBD, and plotting compares those estimates against the known truth.
 
 ## How to get it running
 
 ### Prerequisites
 - Conda (for environment management)
-- Java JRE 8+ (for hap-ibd and IBDNe jars)
-- bcftools (only if `keep_all_files: true`)
+- Java JRE 8+ (for hap-ibd and IBDNe jars; hap-ibd is not needed if `tskit_ibd: true`)
+- bcftools (only if `keep_all_files: true` and `tskit_ibd` is not true)
 - A Slurm cluster (optional; the pipeline can also run locally)
 
 ### Setup steps (in order)
@@ -31,7 +31,7 @@ The pipeline simulates ancestry with msprime, optionally prepending an explicit 
 
 4. Edit setup.yaml (in the repo root) to point to your local paths:
    - maf_pickle: path to SNP density pickle (ukb_snps.pkl is included in the repo)
-   - hap_ibd_jar: path to your hap-ibd.jar
+   - hap_ibd_jar: path to your hap-ibd.jar (not read when tskit_ibd: true)
    - ibdne_jar: path to your ibdne.jar
    - hapmap_chr1: path to genetic_map_GRCh37_chr1.txt.gz (only needed when end_chr=22)
 
@@ -91,9 +91,18 @@ Each simulation is driven by a YAML config file. Here are all the parameters and
 base_dir: <string>        — Parent directory for output. null = current directory.
 dir_name: <string>        — Subdirectory name within the run directory.
 keep_all_files: <bool>    — If true, also retains VCF and HBD files (requires bcftools).
+                            No effect on VCF/HBD when tskit_ibd is true (none are produced).
+tskit_ibd: <bool>         — If true, call IBD directly from the tree sequence instead of writing a
+                            VCF and running hap-ibd. Default false. Output uses the same .ibd.gz
+                            format (tab-separated, no header: id1 hap1 id2 hap2 chr start end cM).
+                            IBD is exact (no SNP thinning or detection error); boundaries are tree
+                            breakpoints; touching segments of a pair are merged before the length
+                            threshold. No VCF/HBD is written; hap_ibd_jar, maf_pickle and nthreads
+                            are unused. Genotype-based analyses (HapNe-LD) are unavailable;
+                            IBD-based post-processing is unaffected.
 gb: <int>                 — Memory (GB) for simulation Slurm jobs.
 sim_min: <int>            — Wall-time (minutes) for simulation Slurm jobs.
-nthreads: <int>           — Threads for hap-ibd.
+nthreads: <int>           — Threads for hap-ibd (unused when tskit_ibd is true).
 sim_workers: <int>        — Number of chromosomes to simulate in parallel within a per-iteration
                             Slurm job (default: 1 = sequential). Memory is scaled by sim_workers.
                             Not used in per-chromosome mode (iter < 3).
@@ -239,6 +248,7 @@ ibd_sims/
   postprocess_experiment.py — Postprocessing experiment manager (batch post-processing)
   simulate.py             — Simulation orchestrator (Slurm or local dispatch)
   simulations.py          — Core simulation logic (msprime, VCF writing, hap-ibd, TMRCA)
+  ibd_from_ts.py          — Calls IBD directly from the tree sequence (used when tskit_ibd: true)
   post_process.py         — Post-processing orchestrator and PostProcessor ABC
   post_modules.py         — Built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes, IBD summary
   plot_Ne.py              — Plotting Ne estimates vs truth
@@ -266,9 +276,12 @@ For each replicate iteration and each chromosome:
 4. Mutations are added with msprime.sim_mutations at rate 1e-8.
 5. A VCF is written and thinned to match realistic SNP density/MAF distribution (using ukb_snps.pkl).
 6. hap-ibd is run on the VCF to detect IBD segments.
+   (If tskit_ibd is true, steps 5-6 are replaced by ibd_from_ts.py, which calls IBD directly from
+   the tree sequence and writes iter{n}_chr{c}.ibd.gz in hap-ibd's format. No VCF or HBD is written.)
 7. TMRCA annotations are computed from the tree sequence.
 8. Per-chromosome outputs are concatenated into iter{n}.ibd.gz, iter{n}.map, iter{n}.tmrca.gz.
-9. Intermediate files (VCF, HBD, per-chromosome files) are cleaned up unless keep_all_files is true.
+9. Intermediate files (VCF, HBD, per-chromosome files) are cleaned up unless keep_all_files is true
+   (nothing VCF/HBD-related to clean up when tskit_ibd is true).
 
 Seeding: each iteration gets a deterministic base seed derived from MD5(output_path) + iter_n.
 Each chromosome within an iteration gets its own random seed.
@@ -336,6 +349,9 @@ Key internals:
 ## Known issues and TODOs
 
 - HapNe-LD integration is slow and may not work correctly.
+- tskit_ibd: true still needs to write the per-chromosome genetic .map file (iter{n}_chr{c}.map) that
+  concatenation and post-processing expect. It also does not yet fall back to tskit automatically when
+  no hap-ibd path is provided.
 - Run resumption (passing an existing output directory instead of a YAML) is partially supported
   but re-running only specific iterations is not yet implemented.
 - There is no global --max-jobs passthrough in `ibd_sims/experiment.py commands`; with --no-wait,
@@ -348,7 +364,7 @@ Key internals:
 - "ModuleNotFoundError: No module named 'simulations'" — You skipped step 3 of setup.
   Run the echo command to register the pipeline modules on the Python path.
 - hap-ibd or IBDNe errors — Check that setup.yaml points to valid jar files and Java is available.
-- "bcftools not found" — Only needed if keep_all_files: true. Install bcftools or set it to false.
+- "bcftools not found" — Only needed if keep_all_files: true (and tskit_ibd is not true). Install bcftools or set it to false.
 - Slurm jobs fail with OOM — Increase gb (for simulation) or mem_gb (for post-processing).
 - Results directory already exists — The pipeline auto-increments directory names (label_001, label_002).
   If you want to overwrite, delete the existing directory first.

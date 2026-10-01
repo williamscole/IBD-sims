@@ -2,7 +2,7 @@
 
 A pipeline for simulating realistic IBD segments under a range of demographic histories and mating models, designed for evaluating [IBDNe](https://faculty.washington.edu/browning/ibdne.html) (a tool that infers effective population size from IBD segments). The simulated IBD segments can also be used for any other downstream analysis.
 
-Ancestry is simulated with [msprime](https://tskit.dev/msprime/docs/stable/intro.html), supporting both standard coalescent simulations and simulations that begin with an explicit Wright-Fisher pedigree for recent generations (the DTWF model). IBD segments are detected from simulated genotype data using [hap-ibd](https://github.com/browning-lab/hap-ibd).
+Ancestry is simulated with [msprime](https://tskit.dev/msprime/docs/stable/intro.html), supporting both standard coalescent simulations and simulations that begin with an explicit Wright-Fisher pedigree for recent generations (the DTWF model). IBD segments are detected from simulated genotype data using [hap-ibd](https://github.com/browning-lab/hap-ibd). Alternatively, with `tskit_ibd: true`, IBD segments are called directly from the simulated tree sequence, skipping VCF writing and hap-ibd entirely (see [`tskit_ibd`](#tskit_ibd-calling-ibd-from-the-tree-sequence)).
 
 ## Table of contents
 
@@ -39,10 +39,10 @@ Ancestry is simulated with [msprime](https://tskit.dev/msprime/docs/stable/intro
 
 **External tools (must be configured in `setup.yaml`):**
 
-- [hap-ibd](https://github.com/browning-lab/hap-ibd) — IBD segment detection (Java jar)
+- [hap-ibd](https://github.com/browning-lab/hap-ibd) — IBD segment detection (Java jar; not needed when `tskit_ibd: true`)
 - [IBDNe](https://faculty.washington.edu/browning/ibdne.html) — Ne inference from IBD (Java jar)
 - Java (JRE 8+)
-- bcftools (only required if `keep_all_files: true`)
+- bcftools (only required if `keep_all_files: true` and `tskit_ibd` is not set)
 
 ## Setup
 
@@ -73,6 +73,8 @@ hapmap_chr1: /path/to/genetic_map_GRCh37_chr1.txt.gz
 ```
 
 `hapmap_chr1` is only needed when `end_chr: 22` (real autosomes). For simulated chromosomes (`end_chr: 30`) it is ignored.
+
+`hap_ibd_jar` and `maf_pickle` are only read when IBD is called with hap-ibd. With `tskit_ibd: true` they are not used.
 
 ## HapNe patches
 
@@ -160,7 +162,7 @@ This produces IBD segments. For each replicate, the outputs are:
 - `iter{n}.tmrca.gz` — TMRCA annotations for each IBD segment
 - `iter{n}.map` — concatenated genetic map
 
-Optional outputs (with `keep_all_files: true`): concatenated VCF, HBD, and per-chromosome tree sequences.
+Optional outputs (with `keep_all_files: true`): concatenated VCF, HBD, and per-chromosome tree sequences. With `tskit_ibd: true` no VCF or HBD file is produced, so `keep_all_files` has no effect on them.
 
 ### Phase 2: Post-processing
 
@@ -435,11 +437,13 @@ Each simulation is configured via a YAML file with two sections: simulation para
 base_dir: ibd_sims          # parent directory for output (null = current dir)
 dir_name: ibd-sims          # subdirectory name within the run directory
 keep_all_files: false       # if true, also saves VCF and HBD files
+tskit_ibd: false            # if true, call IBD directly from the tree sequence
+                            # (no VCF, no hap-ibd; default: false)
 
 # Computational resources (simulation)
 gb: 8                       # memory in GB per simulation job
 sim_min: 30                 # wall-time in minutes for simulation jobs
-nthreads: 8                 # threads for hap-ibd
+nthreads: 8                 # threads for hap-ibd (not used when tskit_ibd is true)
 sim_workers: 1              # number of chromosomes to simulate in parallel within
                             # a per-iteration job (default: 1 = sequential)
 
@@ -464,6 +468,24 @@ pedigree:
   mating: di                # "di" (random) or "mono" (monogamous)
   gen_end: 25               # pedigree generations before coalescent takeover
   pedigree_file: null       # path to pre-existing pedigree file (optional)
+```
+
+#### `tskit_ibd`: calling IBD from the tree sequence
+
+By default, each chromosome is written to a thinned VCF and IBD is detected with hap-ibd. Setting `tskit_ibd: true` (a top-level boolean, default `false`) skips both steps and calls IBD directly from the simulated tree sequence, avoiding the cost of writing a VCF and running hap-ibd. The output is written in the same format as hap-ibd's `.ibd.gz` (tab-separated, no header, columns: `id1 hap1 id2 hap2 chr start end cM`), so post-processing needs no changes.
+
+How it differs from the hap-ibd route:
+
+- **Exact IBD.** Segments come from the true genealogy, so there is no SNP thinning, phasing, or detection error. Use the default route when you want IBD with realistic detection error.
+- **Segment boundaries** are the exact tree-sequence breakpoints rather than the first and last SNP of a segment.
+- **Merging.** Neighbouring tree-sequence segments of a pair that touch are merged into one segment before the length threshold is applied.
+- **No VCF or HBD output.** `keep_all_files` has no effect on these, and bcftools is not required.
+- **Not used:** `hap_ibd_jar` and `maf_pickle` in `setup.yaml`, and `nthreads`.
+- **TMRCA annotations** are computed as in the default route.
+- **Genotype-based analyses are unavailable** (HapNe-LD needs genotypes). IBD-based post-processing (IBDNe, HapNe-IBD, `purple_nodes`, `ibd_summary`) is unaffected.
+
+```yaml
+tskit_ibd: true
 ```
 
 #### `sim_workers` and job mode
@@ -710,6 +732,7 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
     ├── postprocess_experiment.py  # postprocessing experiment manager (batch post-processing across simulations)
     ├── simulate.py           # simulation orchestrator
     ├── simulations.py        # core simulation logic (msprime, VCF, hap-ibd, TMRCA)
+    ├── ibd_from_ts.py        # call IBD directly from the tree sequence (`tskit_ibd: true`)
     ├── post_process.py       # post-processing orchestrator, PostProcessor ABC
     ├── post_modules.py       # built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes, IBD summary
     ├── plot_Ne.py            # plot Ne estimates vs true Ne
@@ -729,7 +752,7 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 
 - [ ] Add a global `--max-jobs` option to `ibd_sims/experiment.py commands` that passes through to each generated `run.py simulate` command. Currently `--max-jobs` only limits jobs within a single simulation run, so with `--no-wait` (the default) an experiment with many simulations can submit more total Slurm jobs than the cluster's per-user queue limit.
 - [ ] Add *better* support for resumption of runs, e.g., re-running only some iterations.
-- [ ] Allow user to *not* provide hap-ibd path. Would default to exact IBD segments computed by `tskit`.
+- [ ] `tskit_ibd: true` (exact IBD from `tskit`, no hap-ibd) is in place, but it still needs to write the per-chromosome genetic `.map` file that concatenation and post-processing expect. It also does not yet fall back to `tskit` automatically when no hap-ibd path is provided.
 - [ ] HapNe-LD currently is slow/does not work.
 - [ ] Long-term goal: integrate ped-sim for more realistic IBD in close relatives.
 - [ ] For a custom sim, the user needs to specify end_chr. The current strategy is hacky: put it under resources to override the top level end_chr. Low priority: implement in a better way.
