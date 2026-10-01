@@ -164,7 +164,7 @@ def ts_ibd_pipeline(ts, out_dir, iter_n=1, chrom=1, rate=1e-8, **ibd_kwargs):
 
     df = ibd_from_ts(ts, chrom, rate=rate, **ibd_kwargs)
     write_ibd(df, prefix)
-    write_empty_hbd(prefix)
+    # write_empty_hbd(prefix)
     write_samples(ts, os.path.join(out_dir, f"iter{iter_n}.samples"))
     return df, prefix
 
