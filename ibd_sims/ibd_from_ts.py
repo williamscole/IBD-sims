@@ -105,7 +105,7 @@ def default_min_span(rate, min_cm):
         max_rate = float(np.nanmax(rate.rate))
     if max_rate <= 0:
         return 0
-    return int(np.floor(min_cm / (max_rate * 100)))
+    return max(20_000, int(np.floor(min_cm / (max_rate * 100))))
 
 def make_cm_fn(rate=1e-8):
     """Return f(bp) -> cM.
