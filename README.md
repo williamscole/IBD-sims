@@ -480,6 +480,7 @@ How it differs from the hap-ibd route:
 - **Segment boundaries** are the exact tree-sequence breakpoints rather than the first and last SNP of a segment.
 - **Merging.** Neighbouring tree-sequence segments of a pair that touch are merged into one segment before the length threshold is applied.
 - **No VCF or HBD output.** `keep_all_files` has no effect on these, and bcftools is not required.
+- **Genetic map.** With no SNPs, the `.map` file is built from the recombination rate: a constant rate gives rows every 10 kb along the chromosome, and an `msprime.RateMap` gives the map's own breakpoints (merged with the same 10 kb grid). Every called segment's start and end is also added as a row, and the last row is always the end of the chromosome.
 - **Not used:** `hap_ibd_jar` and `maf_pickle` in `setup.yaml`, and `nthreads`.
 - **TMRCA annotations** are computed as in the default route.
 - **Genotype-based analyses are unavailable** (HapNe-LD needs genotypes). IBD-based post-processing (IBDNe, HapNe-IBD, `purple_nodes`, `ibd_summary`) is unaffected.
@@ -752,7 +753,7 @@ Then point `maf_pickle` in `setup.yaml` to your output file.
 
 - [ ] Add a global `--max-jobs` option to `ibd_sims/experiment.py commands` that passes through to each generated `run.py simulate` command. Currently `--max-jobs` only limits jobs within a single simulation run, so with `--no-wait` (the default) an experiment with many simulations can submit more total Slurm jobs than the cluster's per-user queue limit.
 - [ ] Add *better* support for resumption of runs, e.g., re-running only some iterations.
-- [ ] `tskit_ibd: true` (exact IBD from `tskit`, no hap-ibd) is in place, but it still needs to write the per-chromosome genetic `.map` file that concatenation and post-processing expect. It also does not yet fall back to `tskit` automatically when no hap-ibd path is provided.
+- [ ] `tskit_ibd: true` (exact IBD from `tskit`, no hap-ibd) does not yet fall back to `tskit` automatically when no hap-ibd path is provided.
 - [ ] HapNe-LD currently is slow/does not work.
 - [ ] Long-term goal: integrate ped-sim for more realistic IBD in close relatives.
 - [ ] For a custom sim, the user needs to specify end_chr. The current strategy is hacky: put it under resources to override the top level end_chr. Low priority: implement in a better way.

@@ -349,9 +349,7 @@ Key internals:
 ## Known issues and TODOs
 
 - HapNe-LD integration is slow and may not work correctly.
-- tskit_ibd: true still needs to write the per-chromosome genetic .map file (iter{n}_chr{c}.map) that
-  concatenation and post-processing expect. It also does not yet fall back to tskit automatically when
-  no hap-ibd path is provided.
+- tskit_ibd: true does not yet fall back to tskit automatically when no hap-ibd path is provided.
 - Run resumption (passing an existing output directory instead of a YAML) is partially supported
   but re-running only specific iterations is not yet implemented.
 - There is no global --max-jobs passthrough in `ibd_sims/experiment.py commands`; with --no-wait,
