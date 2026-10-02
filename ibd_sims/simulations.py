@@ -11,6 +11,7 @@ import hashlib
 import itertools as it
 import pickle as pkl
 from pathlib import Path
+import time
 
 from write_vcf import write_vcf
 from wf_pedigree import create_pedigree
@@ -335,9 +336,13 @@ def sim(path, iter_n, chrom):
         ts_ibd_pipeline(ts, path, iter_n, chrom, rate)
 
     else:
+        t1 = time.time()
+
         write_vcf(ts, prefix, chrom, rate, seed, snps_pkl=config["maf_pickle"])
 
         run_hapibd(prefix, yargs["gb"], hapibd_jar=config["hap_ibd_jar"])
+
+        print(f"Time to write VCF and call IBD: {round(time.time()-t1, 4)}")
 
     add_tmrca(prefix, ts, yargs.get("keep_trees", False))
 
