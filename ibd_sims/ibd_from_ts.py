@@ -25,6 +25,42 @@ def test_ts(samples=50, seed=42):
 
     return ts
 
+def write_map(ts, prefix, chrom, rate=1e-8, spacing=10_000, extra_bp=None):
+    """Write {prefix}.map in PLINK format (chrom, id, cM, bp), as write_vcf does.
+
+    There are no SNPs in tskit mode, so positions come from the rate instead:
+      - constant rate: every `spacing` bp from 0 to the end of the sequence
+      - msprime.RateMap: the map's own breakpoints (cM is exactly linear between
+        them), merged with the same regular grid so that coarse maps still have
+        rows throughout (HapNe-IBD measures each chromosome arm from the map rows
+        inside it, so it needs rows spread over the whole chromosome)
+      - `extra_bp`: any additional positions to include, e.g. every IBD segment
+        start/end, so each called segment endpoint is a marker in the map
+    The last row is always the end of the sequence (HapNe takes chromosome length
+    from the largest bp). cM comes from the same function used for IBD lengths.
+    """
+    if isinstance(rate, tuple):          # GenomeSetup.create output
+        rate = rate[1]
+    cm_fn = make_cm_fn(rate)
+
+    length = int(ts.sequence_length)
+    bp = np.append(np.arange(0, length, spacing), length)
+    if hasattr(rate, "position"):        # msprime.RateMap
+        breakpoints = np.asarray(rate.position, dtype=float)
+        bp = np.concatenate([bp, breakpoints[breakpoints <= length].astype(int)])
+    if extra_bp is not None and len(extra_bp):
+        extra = np.asarray(extra_bp, dtype=float)
+        bp = np.concatenate([bp, extra[(extra >= 0) & (extra <= length)].astype(int)])
+    bp = np.unique(bp).astype(int)
+
+    map_df = pd.DataFrame({
+        "chrom": str(chrom),
+        "rsid": [f"chr{chrom}_{b}" for b in bp],
+        "cm": cm_fn(bp),
+        "bp": bp,
+    })
+    map_df.to_csv(f"{prefix}.map", header=False, index=False, sep=" ")
+
 
 def sample_node_map(ts):
     """Map sample node -> (j, hap), matching write_vcf's tsk_j convention.
@@ -55,6 +91,21 @@ def sample_node_map(ts):
             )
     return mapping
 
+def default_min_span(rate, min_cm):
+    """Smallest bp length a segment can have and still reach `min_cm` (conservative).
+
+    Segments shorter than this cannot pass the length threshold, so tskit can
+    skip them. Using the map's highest rate keeps this safe for variable maps.
+    """
+    if isinstance(rate, tuple):          # GenomeSetup.create output
+        rate = rate[1]
+    if isinstance(rate, numbers.Real):
+        max_rate = float(rate)
+    else:
+        max_rate = float(np.nanmax(rate.rate))
+    if max_rate <= 0:
+        return 0
+    return int(np.floor(min_cm / (max_rate * 100)))
 
 def make_cm_fn(rate=1e-8):
     """Return f(bp) -> cM.
@@ -104,6 +155,9 @@ def ibd_from_ts(ts, chrom, rate=1e-8, min_cm=2.0, gap_cm=0.0, min_span=0, max_ti
     """
     node_map = sample_node_map(ts)
     cm_fn = make_cm_fn(rate)
+
+    if min_span is None:
+        min_span = default_min_span(rate, min_cm)
 
     kwargs = dict(min_span=min_span, store_segments=True)
     if max_time is not None:
@@ -164,7 +218,7 @@ def ts_ibd_pipeline(ts, out_dir, iter_n=1, chrom=1, rate=1e-8, **ibd_kwargs):
 
     df = ibd_from_ts(ts, chrom, rate=rate, **ibd_kwargs)
     write_ibd(df, prefix)
-    # write_empty_hbd(prefix)
+    write_map(ts, prefix, chrom, rate, extra_bp=np.concatenate([df["start"], df["end"]]))
     write_samples(ts, os.path.join(out_dir, f"iter{iter_n}.samples"))
     return df, prefix
 
@@ -199,7 +253,7 @@ def main(argv=None):
     print(f"Called {len(df)} IBD segments >= {a.min_cm} cM ({time.time() - t0:.1f}s)")
     if len(df):
         print(f"  mean length {df.cM.mean():.2f} cM, max {df.cM.max():.2f} cM")
-    print(f"Wrote {prefix}.ibd.gz and {prefix}.hbd.gz (empty)")
+    print(f"Wrote {prefix}.ibd.gz and {prefix}.map")
     print(f"Wrote {os.path.join(a.out_dir, f'iter{a.iter_n}.samples')}")
 
 
