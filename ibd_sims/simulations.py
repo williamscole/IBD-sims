@@ -339,7 +339,7 @@ def sim(path, iter_n, chrom):
 
         run_hapibd(prefix, yargs["gb"], hapibd_jar=config["hap_ibd_jar"])
 
-    add_tmrca(prefix, ts, False)
+    add_tmrca(prefix, ts, yargs.get("keep_trees", False))
 
     if os.path.exists(f"{prefix}.ibd.gz"):
 
