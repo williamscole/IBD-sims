@@ -142,7 +142,7 @@ def merge_segments(segs, cm_fn, gap_cm=0.0):
     return merged
 
 
-def ibd_from_ts(ts, chrom, rate=1e-8, min_cm=2.0, gap_cm=0.0, min_span=0, max_time=None):
+def ibd_from_ts(ts, chrom, rate=1e-8, min_cm=2.0, gap_cm=0.0, min_span=20_000, max_time=None):
     """Call IBD directly from a tree sequence, in hap-ibd output layout.
 
     `rate` defaults to a constant 1e-8; it also accepts an msprime.RateMap or the
@@ -158,6 +158,8 @@ def ibd_from_ts(ts, chrom, rate=1e-8, min_cm=2.0, gap_cm=0.0, min_span=0, max_ti
 
     if min_span is None:
         min_span = default_min_span(rate, min_cm)
+
+    print(f"--min_span argument: {min_span}")
 
     kwargs = dict(min_span=min_span, store_segments=True)
     if max_time is not None:
