@@ -121,6 +121,8 @@ class Simulation:
                 init_state = None
                 init_samples = args["samples"]
 
+            print("Starting sim now (chrom={chrom})") # TODO: remove
+            t1 = time.time()
             ts = msprime.sim_ancestry(samples={"pop_0": init_samples} if init_samples else None,
                               initial_state=init_state,
                               sequence_length=sequence_length,
@@ -129,6 +131,7 @@ class Simulation:
                               demography=demography,
                               random_seed=seed
                               )
+            print_time(t1, "iter", "chrom", "\tFinished sim:")
             seed += 20
 
         return msprime.sim_mutations(ts, rate=1e-8, random_seed=seed - 10), rate, [demography], seed
@@ -273,6 +276,12 @@ def base_seed(path, iter_n):
 
     return (int(full_hex[-16:], 16) + iter_n)  % (2**32)
 
+def print_time(start_time, iter_n, chrom, msg):
+
+    elapsed_time = round(time.time()-start_time, 4)
+
+    print(msg + f" {elapsed_time} (iter={iter_n}, chrom={chrom})")
+
 def sim(path, iter_n, chrom):
 
     iteration_seed = base_seed(path, int(iter_n))
@@ -305,7 +314,6 @@ def sim(path, iter_n, chrom):
  
     print(f"Random seed: {seed}")
 
-
     # Dead code for direct CLI use only
     if int(chrom) == 0 and yargs["pedigree"]["pedigree_mode"]:
         log = open(f"{path}/simulation.log", "w")
@@ -325,7 +333,9 @@ def sim(path, iter_n, chrom):
 
     # if random.random() < 0.25: raise RuntimeError("Random crash!")
 
+    t1 = time.time()
     ts, rate, demography, seed = Simulation.create(yargs, chrom, f"{path}/iter{iter_n}")
+    print_time(t1, iter_n, chrom, "Simulation time:")
 
 
     # log.write(f"\n\n{demography[0].debug() if len(demography)>0 else 'ts supplied!'}\n")
@@ -342,7 +352,7 @@ def sim(path, iter_n, chrom):
 
         run_hapibd(prefix, yargs["gb"], hapibd_jar=config["hap_ibd_jar"])
 
-        print(f"Time to write VCF and call IBD: {round(time.time()-t1, 4)}")
+        print_time(t1, iter_n, chrom, "Time to write VCF and call IBD:")
 
     add_tmrca(prefix, ts, yargs.get("keep_trees", False))
 
