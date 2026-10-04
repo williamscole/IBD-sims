@@ -1,0 +1,28 @@
+experiment: minspan_sweep
+
+# Fixed across all simulations
+iter: 25                # 25 replicates
+samples: 100            # keep small: the tskit reference call is expensive
+sim_workers: 10         # chromosomes simulated in parallel inside each replicate's job
+
+# Resources (per chromosome)
+gb: 8
+sim_min: 30
+nthreads: 2
+
+# This experiment
+tskit_ibd: false        # hap-ibd route, which gives the .ibd.gz to compare against
+keep_trees: true        # saves iter{n}_chr{c}.trees for phase 2
+keep_all_files: false
+
+end_chr:
+  30: {}                # 30 x 100 Mb, constant 1e-8
+
+demographies:
+  constant_Ne_10k:
+    object: constant_Ne
+    path: ibd_sims/demography.py
+
+mating:
+  coalescent:
+    pedigree_mode: false   # plain coalescent, no pedigree
