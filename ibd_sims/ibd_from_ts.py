@@ -124,8 +124,13 @@ def make_cm_fn(rate=1e-8):
     raise TypeError(f"Unsupported rate type: {type(rate).__name__}")
 
 
-def merge_segments(segs, cm_fn, gap_cm=0.0):
-    """Merge a pair's segments that touch (or are within gap_cm of each other)."""
+def merge_segments(segs, cm_fn, gap_cm=0.0, same_mrca=True):
+    """Merge a pair's segments that touch (or are within gap_cm of each other).
+
+    By default only pieces with the same MRCA node are merged: tskit reports a
+    stretch with one MRCA as several adjacent pieces, but pieces with different
+    MRCAs are different ancestry. same_mrca=False merges any touching pieces.
+    """
     segs = sorted(segs, key=lambda s: s.left)
     merged = []
     for s in segs:
@@ -133,7 +138,7 @@ def merge_segments(segs, cm_fn, gap_cm=0.0):
             m = merged[-1]
             touching = s.left <= m["right"]
             near = gap_cm > 0 and (cm_fn(s.left) - cm_fn(m["right"])) <= gap_cm
-            if touching or near:
+            if (touching or near) and (not same_mrca or s.node == m["pieces"][-1][2]):
                 m["right"] = max(m["right"], s.right)
                 m["pieces"].append((s.left, s.right, s.node))
                 continue
@@ -142,7 +147,7 @@ def merge_segments(segs, cm_fn, gap_cm=0.0):
     return merged
 
 
-def ibd_from_ts(ts, chrom, rate=1e-8, min_cm=2.0, gap_cm=0.0, min_span=20_000, max_time=None):
+def ibd_from_ts(ts, chrom, rate=1e-8, min_cm=2.0, gap_cm=0.0, min_span=20_000, same_mrca=True, max_time=None):
     """Call IBD directly from a tree sequence, in hap-ibd output layout.
 
     `rate` defaults to a constant 1e-8; it also accepts an msprime.RateMap or the
@@ -156,8 +161,8 @@ def ibd_from_ts(ts, chrom, rate=1e-8, min_cm=2.0, gap_cm=0.0, min_span=20_000, m
     node_map = sample_node_map(ts)
     cm_fn = make_cm_fn(rate)
 
-    if min_span is None:
-        min_span = default_min_span(rate, min_cm)
+    # if min_span is None:
+    #     min_span = default_min_span(rate, min_cm)
 
     print(f"--min_span argument: {min_span}")
 
@@ -172,7 +177,7 @@ def ibd_from_ts(ts, chrom, rate=1e-8, min_cm=2.0, gap_cm=0.0, min_span=20_000, m
         j2, h2 = node_map[n2]
         if j1 == j2:          # same individual -> HBD, goes to .hbd.gz in hap-ibd
             continue
-        for m in merge_segments(seg_list, cm_fn, gap_cm):
+        for m in merge_segments(seg_list, cm_fn, gap_cm, same_mrca):
             length_cm = float(cm_fn(m["right"]) - cm_fn(m["left"]))
             if length_cm < min_cm:
                 continue
