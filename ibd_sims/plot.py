@@ -148,9 +148,11 @@ def get_truth(args):
 
     gen_arr = np.arange(0, args["gmax"]+1)
 
-    ne_arr = demo.debug().population_size_trajectory(gen_arr)
+    dbg = demo.debug()
+    idx = [p.name for p in dbg.demography.populations].index("pop_0")
+    ne_arr = dbg.population_size_trajectory(gen_arr)
 
-    return pd.DataFrame({"GEN": gen_arr, "NE": ne_arr[:,0]})
+    return pd.DataFrame({"GEN": gen_arr, "NE": ne_arr[:, idx]})
 
 def meta_analysis(iter1_path, n_iter, skip_error=True):
 

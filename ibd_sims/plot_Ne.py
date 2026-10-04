@@ -84,12 +84,13 @@ def get_truth(yargs: dict) -> pd.DataFrame | None:
     try:
         demo = DemographicSetup.create(yargs)
         gen_arr = np.arange(0, gmax + 1)
-        ne_arr = demo.debug().population_size_trajectory(gen_arr)
-        return pd.DataFrame({"GEN": gen_arr, "NE": ne_arr[:, 0]})
+        dbg = demo.debug()
+        idx = [p.name for p in dbg.demography.populations].index("pop_0")
+        ne_arr = dbg.population_size_trajectory(gen_arr)
+        return pd.DataFrame({"GEN": gen_arr, "NE": ne_arr[:, idx]})
     except Exception as e:
         print(f"  [truth] Could not compute truth Ne: {e}")
         return None
-
 
 # ── Core plotting ─────────────────────────────────────────────────────────────
 

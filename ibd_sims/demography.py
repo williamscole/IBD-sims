@@ -82,48 +82,34 @@ constant_Ne100k.add_population(
 ###### 2-Ppop OOA
 
 def create_demography():
-    # Initialize demography with initial populations
     demography = msprime.Demography()
-    
-    # Add populations (going backwards in time, we start with the most recent state)
-    demography.add_population(name="pop_0", initial_size=501436.3, growth_rate=0.0195)
-    demography.add_population(name="AFR", initial_size=432124.6, growth_rate=0.0166)
-    demography.set_symmetric_migration_rate(["AFR", "pop_0"], 2.5e-05)
-    
-    # Set the most ancient population parameters
-    demography.add_population_parameters_change(
-        time=205, initial_size=9279.2, growth_rate=0.00307, population="pop_0"
-    )
-    demography.add_population_parameters_change(
-        time=205, initial_size=14474.0, growth_rate=0, population="AFR"
-    )
 
-
-        # At 920 generations ago: Migration rate and EUR population changes
-    demography.add_symmetric_migration_rate_change(time=920, rate=0.00015, populations=["pop_0", "AFR"])
+    # Sampled population: African. It must be added first (index 0) and be named "pop_0",
+    # because the pedigree, the sampling and the truth Ne all use pop_0.
+    demography.add_population(name="pop_0", initial_size=432124.6, growth_rate=0.0166)
+    demography.add_population(name="EUR", initial_size=501436.3, growth_rate=0.0195)
+    demography.set_symmetric_migration_rate(["pop_0", "EUR"], 2.5e-05)
 
     demography.add_population_parameters_change(
-        time=920, initial_size=1861.0, growth_rate=0, population="pop_0"
-    )
+        time=205, initial_size=14474.0, growth_rate=0, population="pop_0")
+    demography.add_population_parameters_change(
+        time=205, initial_size=9279.2, growth_rate=0.00307, population="EUR")
+
+    demography.add_symmetric_migration_rate_change(
+        time=920, rate=0.00015, populations=["pop_0", "EUR"])
+    demography.add_population_parameters_change(
+        time=920, initial_size=14474.0, growth_rate=0, population="pop_0")
+    demography.add_population_parameters_change(
+        time=920, initial_size=1861.0, growth_rate=0, population="EUR")
+
+    # 2040 generations ago: Europeans merge back into Africans
+    demography.add_mass_migration(time=2040, source="EUR", dest="pop_0", proportion=1.0)
+    demography.add_symmetric_migration_rate_change(
+        time=2040, rate=0, populations=["pop_0", "EUR"])
 
     demography.add_population_parameters_change(
-        time=920, initial_size=14474.0, growth_rate=0, population="AFR"
-    )
+        time=5920, initial_size=7310, population="pop_0")
 
-    
-    # At 2040 generations ago: Mass migration and migration rate change
-    demography.add_mass_migration(
-        time=2040, source="pop_0", dest="AFR", proportion=1.0
-    )
-
-    demography.add_symmetric_migration_rate_change(time=2040, rate=0, populations=["pop_0", "AFR"])
-
-    # At 5920 generations ago: AFR population size change
-    demography.add_population_parameters_change(
-        time=5920, initial_size=7310, population="AFR"
-    )
-
-    
     return demography
 
 # Create and debug the demography
