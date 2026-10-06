@@ -58,7 +58,8 @@ def write_vcf(ts, output, chrom, rate, seed, snps_pkl="ukb_snps.pkl"):
     # Iterate through each AF bucket
     for af1, af2, count in bucket_counts:
         np.random.seed(seed)
-        pot_index = np.where(np.logical_and((af>af1).flatten(), (af<=af2).flatten(), positions>0))[0]
+        # pot_index = np.where(np.logical_and((af>af1).flatten(), (af<=af2).flatten(), positions>0))[0] <- BUG
+        pot_index = np.where((af > af1).flatten() & (af <= af2).flatten() & (positions > 0))[0]
         pot_sites = mut_df[mut_df.site.isin(pot_index)].values[:,0]
         keep_sites |= set(np.random.choice(pot_sites, min(pot_sites.shape[0], count), replace=False))
         seed += 1
