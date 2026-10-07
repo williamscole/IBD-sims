@@ -370,7 +370,7 @@ def sim(path, iter_n, chrom):
 
             print("Success!")
 
-            sys.exit()
+            return True
 
     else:
         err = open(f"{path}/errors/iter{iter_n}_chr{chrom}.err", "w")

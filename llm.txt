@@ -41,12 +41,15 @@ The pipeline simulates ancestry with msprime, optionally prepending an explicit 
    sed -i 's/n = n.ravel()/n = np.asarray(n).ravel()/' \
      /path/to/envs/ibd-sims/lib/python3.12/site-packages/hapne/utils.py
 
-### Quick smoke test
-   python run.py simulate yaml_files/debug.yaml --local
+### Quick smoke test (no Java or jars needed)
+   python run.py simulate yaml_files/quickstart.yaml --local --workers 2
+   Output: quickstart/quickstart/iter1.ibd.gz and quickstart/quickstart/ibd_summary/001/iter1.tsv
 
 ## The three pipeline phases
 
-Everything goes through run.py, which has three subcommands: simulate, postprocess, plot.
+Simulation and post-processing go through run.py (subcommands: simulate, postprocess).
+Run all commands from the repository root; configs use paths relative to it.
+Detailed docs: README.md, docs/configuration.md, docs/experiments.md, docs/extending.md.
 
 ### Phase 1: simulate
 Produces IBD segments. For each replicate iteration, outputs are:
@@ -56,7 +59,7 @@ Produces IBD segments. For each replicate iteration, outputs are:
 
 Commands:
    python run.py simulate yaml_files/arg1.yaml                    # Slurm (default)
-   python run.py simulate yaml_files/arg1.yaml --local --workers 8  # local
+   python run.py simulate yaml_files/arg1.yaml --local --workers 8  # local, at most 8 jobs at once
    python run.py simulate yaml_files/arg1.yaml --set iter=5 --set pedigree.mating=mono  # override YAML params
 
 ### Phase 2: postprocess
@@ -65,6 +68,11 @@ Runs Ne inference on the simulation output. Can be re-run with different paramet
 Commands:
    python run.py postprocess path/to/run/
    python run.py postprocess path/to/run/ --set ibdne.mincm=3 ibdne.nboots=100
+   python run.py postprocess path/to/run/ --set local=false   # submit to Slurm
+
+Post-processing runs locally by default (local: true), even if the simulation ran on Slurm.
+Analyses listed in post_process also run automatically at the end of run.py simulate, but only
+when iter is 1 or 2 (per-chromosome mode); with more replicates, run run.py postprocess afterwards.
 
 Post-processing output goes into numbered subdirectories (e.g., ibdne/001/, ibdne/002/).
 If you re-run with the same parameters, it overwrites the matching directory.
@@ -72,15 +80,14 @@ If you change parameters, it creates a new numbered directory.
 Each subdirectory has its own args.yaml recording what parameters were used.
 
 ### Phase 3: plot
-Plots Ne estimates against the true demographic history.
+Plots Ne estimates against the true demographic history. Plotting works on experiment
+directories (see docs/experiments.md):
 
-Commands:
-   python run.py plot path/to/run/ --ibdne 001 003 --hapne_ibd 001
-   python run.py plot path/to/run/ --hapne_ld 001 002
-   python run.py plot path/to/run/ --ibdne 001 --no-vlines
+   python ibd_sims/plot_Ne.py path/to/experiment_dir/
+   python ibd_sims/plot_Ne.py path/to/experiment_dir/ --no-vlines --save-pickle
 
-The arguments (001, 003, etc.) refer to the numbered subdirectories from post-processing.
-Output is saved to {path}/Ne_plot.png.
+Output: {experiment_dir}/plots/{simulation}_Ne_plot.png.
+Note: `python run.py plot` is currently out of sync with plot_Ne.py and fails.
 
 ## YAML configuration reference
 
@@ -108,8 +115,9 @@ sim_workers: <int>        — Number of chromosomes to simulate in parallel with
                             Not used in per-chromosome mode (iter < 3).
 iter: <int>               — Number of independent replicate simulations.
 samples: <int>            — Number of diploid individuals to simulate.
-end_chr: <int>            — Chromosomes to simulate. 30 = thirty 100Mb simulated chromosomes.
-                            22 = real human autosomes (requires hapmap genetic maps).
+end_chr: <int>            — Genome layout. Only 1, 2, 22 and 30 are supported.
+                            30 = thirty 100Mb simulated chromosomes; 1 or 2 = one or two 50Mb
+                            chromosomes; 22 = real human autosomes (requires hapmap genetic maps).
 subsample_frac: <float>   — Fraction of samples used for related/unrelated/random filtering subsets
                             (default: 0.25, i.e. N/4 individuals). The subsample size is
                             round(samples * subsample_frac).
@@ -192,7 +200,8 @@ To add your own: define an msprime.Demography object in a .py file and reference
 
 ## Pre-built YAML configs (in yaml_files/)
 
-debug.yaml  — 1 replicate, coalescent only, constant Ne 10k. Use this to test your setup.
+quickstart.yaml — 1 replicate, 200 samples, two 50Mb chromosomes, tskit_ibd, ibd_summary. No external tools needed.
+debug.yaml  — 1 replicate, coalescent only, constant Ne 10k (uses hap-ibd).
 arg1.yaml   — 50 replicates, random mating DTWF, constant Ne 10k, 1000 samples
 arg2.yaml   — 50 replicates, monogamous DTWF, constant Ne 10k, 1000 samples
 arg3.yaml   — 50 replicates, random mating DTWF, constant Ne 100k, 1000 samples
@@ -360,6 +369,10 @@ Key internals:
 - Some older YAML configs (arg9–arg19) use a legacy flat format without the post_process block.
 
 ## Common troubleshooting
+
+- Where are the logs? <run_dir>/slurm/*_log.err (used for local runs too) and <run_dir>/errors/.
+- "UnboundLocalError: ... 'sequence_length'" — end_chr must be 1, 2, 22 or 30.
+- "FileNotFoundError" for ibd_sims/demography.py or ukb_snps.pkl — run from the repository root.
 
 - "ModuleNotFoundError: No module named 'simulations'" — You skipped step 3 of setup.
   Run the echo command to register the pipeline modules on the Python path.

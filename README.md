@@ -1,759 +1,282 @@
-# IBD simulations
+# IBD-sims
 
-A pipeline for simulating realistic IBD segments under a range of demographic histories and mating models, designed for evaluating [IBDNe](https://faculty.washington.edu/browning/ibdne.html) (a tool that infers effective population size from IBD segments). The simulated IBD segments can also be used for any other downstream analysis.
+Simulate realistic **identity-by-descent (IBD) segments** under a population history you choose, then test how well tools like [IBDNe](https://faculty.washington.edu/browning/ibdne.html) recover that history.
 
-Ancestry is simulated with [msprime](https://tskit.dev/msprime/docs/stable/intro.html), supporting both standard coalescent simulations and simulations that begin with an explicit Wright-Fisher pedigree for recent generations (the DTWF model). IBD segments are detected from simulated genotype data using [hap-ibd](https://github.com/browning-lab/hap-ibd). Alternatively, with `tskit_ibd: true`, IBD segments are called directly from the simulated tree sequence, skipping VCF writing and hap-ibd entirely (see [`tskit_ibd`](#tskit_ibd-calling-ibd-from-the-tree-sequence)).
+You pick a demographic history (constant size, Out-of-Africa, a bottleneck, or your own) and a mating model (random or monogamous). The pipeline then:
 
-## Table of contents
+1. **Simulates** genomes for a sample of people and finds the IBD segments they share.
+2. **Analyses** those segments, for example estimating effective population size (Ne) over time with IBDNe or HapNe.
+3. **Plots** the estimates against the true history you simulated.
 
-- [Requirements](#requirements)
-- [Setup](#setup)
-  - [1. Create the conda environment](#1-create-the-conda-environment)
-  - [2. Register the pipeline](#2-register-the-pipeline)
-  - [3. Configure paths](#3-configure-paths)
-- [HapNe patches](#hapne-patches)
-- [Quick start](#quick-start)
-- [Pipeline overview](#pipeline-overview)
-  - [Phase 1: Simulation](#phase-1-simulation)
-  - [Phase 2: Post-processing](#phase-2-post-processing)
-  - [Phase 3: Plotting](#phase-3-plotting)
-- [Experiment manager](#experiment-manager)
-  - [Workflow](#workflow)
-  - [Adding post-processing](#adding-post-processing)
-- [Postprocessing experiment manager](#postprocessing-experiment-manager)
-  - [Workflow](#workflow-1)
-- [YAML configuration](#yaml-configuration)
-  - [Simulation parameters](#simulation-parameters)
-  - [Post-processing parameters](#post-processing-parameters)
-- [Output structure](#output-structure)
-- [Example configurations](#example-configurations)
-- [Adding a new demographic model](#adding-a-new-demographic-model)
-- [Writing a custom post-processing module](#writing-a-custom-post-processing-module)
-- [SNP density and MAF distribution](#snp-density-and-maf-distribution)
-- [Repository structure](#repository-structure)
-- [TODO](#todo)
+Because the truth is known, you can see exactly where an Ne-estimation method gets things right and wrong. The IBD segments are plain text files, so you can also use them for any other analysis.
 
-## Requirements
+<details>
+<summary>What's under the hood?</summary>
 
-**Python packages:** msprime, numpy, pandas, matplotlib, seaborn, PyYAML, submitit, stdpopsim, hapne
+Genealogies are simulated with [msprime](https://tskit.dev/msprime/), either with the standard coalescent or with an explicit Wright-Fisher pedigree for the most recent generations. IBD segments are found either with [hap-ibd](https://github.com/browning-lab/hap-ibd) on simulated genotypes (realistic detection error), or read exactly from the simulated genealogy with tskit (fast, no external tools). Jobs run on your own machine or on a Slurm cluster.
+</details>
 
-**External tools (must be configured in `setup.yaml`):**
+## Contents
 
-- [hap-ibd](https://github.com/browning-lab/hap-ibd) — IBD segment detection (Java jar; not needed when `tskit_ibd: true`)
-- [IBDNe](https://faculty.washington.edu/browning/ibdne.html) — Ne inference from IBD (Java jar)
-- Java (JRE 8+)
-- bcftools (only required if `keep_all_files: true` and `tskit_ibd` is not set)
+- [Quick start (about 5 minutes)](#quick-start-about-5-minutes)
+- [Full installation](#full-installation)
+- [Running simulations](#running-simulations)
+- [Estimating Ne and other analyses](#estimating-ne-and-other-analyses)
+- [Plotting](#plotting)
+- [Understanding the output](#understanding-the-output)
+- [Writing your own config](#writing-your-own-config)
+- [Troubleshooting](#troubleshooting)
+- [More documentation](#more-documentation)
+- [Known limitations and to-do](#known-limitations-and-to-do)
 
-## Setup
+## Quick start (about 5 minutes)
 
-### 1. Create the conda environment
+This runs a tiny simulation on your own computer. It needs only [conda](https://docs.conda.io/en/latest/miniconda.html): no Java, no cluster, no extra downloads.
+
+**1. Get the code and install the Python environment** (the environment step takes a while the first time):
 
 ```bash
+git clone https://github.com/williamscole/IBD-sims.git
+cd IBD-sims
 conda env create -f environment.yaml
 conda activate ibd-sims
 ```
 
-### 2. Register the pipeline
-
-This ensures Python (and Slurm workers) can find the pipeline modules:
+**2. Let Python find the pipeline code** (one-time step):
 
 ```bash
 echo "$(cd ibd_sims && pwd)" > $(python -c "import site; print(site.getsitepackages()[0])")/ibd-sims.pth
 ```
 
-### 3. Configure paths
+**3. Run the example:**
 
-Edit `ibd_sims/setup.yaml` to point to your local paths:
+```bash
+python run.py simulate yaml_files/quickstart.yaml --local --workers 2
+```
+
+This simulates 200 people on two chromosomes and summarises the IBD they share. When it prints `Done.`, look in `quickstart/quickstart/`:
+
+- `iter1.ibd.gz`: the IBD segments (one per line)
+- `ibd_summary/001/iter1.tsv`: a small table of how much IBD was found
+
+That's it, the pipeline works. Next, follow the [full installation](#full-installation) to set up the external tools for IBD calling and Ne estimation.
+
+## Full installation
+
+### 1. Python environment
+
+Same as the quick start: create the conda environment and register the pipeline (steps 1 and 2 above).
+
+> **Tip:** run every command from the repository root (the `IBD-sims/` folder). Config files refer to paths like `ibd_sims/demography.py` relative to it.
+
+### 2. External tools: install only what you need
+
+| Tool | Needed for | Not needed if |
+|------|------------|---------------|
+| Java 8+ | hap-ibd and IBDNe | you use neither |
+| [hap-ibd](https://github.com/browning-lab/hap-ibd) jar | Calling IBD from simulated genotypes (the default) | you set `tskit_ibd: true` |
+| [IBDNe](https://faculty.washington.edu/browning/ibdne.html) jar | Estimating Ne with IBDNe | you don't run IBDNe |
+| bcftools | Keeping the combined VCF (`keep_all_files: true`) | you leave `keep_all_files: false` |
+| HapMap GRCh37 genetic maps | Simulating the real human autosomes (`end_chr: 22`) | you use simulated chromosomes (`end_chr: 30`, the default in the examples) |
+
+### 3. Tell the pipeline where the tools are
+
+Edit `setup.yaml` in the repository root. Leave entries you don't need as they are.
 
 ```yaml
-maf_pickle: ukb_snps.pkl
+maf_pickle: ukb_snps.pkl                                # included; leave as is
 hap_ibd_jar: /path/to/hap-ibd.jar
 ibdne_jar: /path/to/ibdne.jar
-hapmap_chr1: /path/to/genetic_map_GRCh37_chr1.txt.gz
+hapmap_chr1: /path/to/genetic_map_GRCh37_chr1.txt.gz    # only for end_chr: 22
 ```
 
-`hapmap_chr1` is only needed when `end_chr: 22` (real autosomes). For simulated chromosomes (`end_chr: 30`) it is ignored.
+### Optional: HapNe
 
-`hap_ibd_jar` and `maf_pickle` are only read when IBD is called with hap-ibd. With `tskit_ibd: true` they are not used.
-
-## HapNe patches
-
-The version of HapNe used here (commit `6bdac20`) requires two small patches to work correctly with recent NumPy versions. After installing HapNe, apply them with `sed` (adjust the path to match your conda environment):
+HapNe is installed by the conda environment, but the pinned version needs two small fixes to work with recent NumPy. You only need these to run HapNe-IBD or HapNe-LD.
 
 ```bash
-# Fix scalar assignment in DemographicHistory.py
-sed -i 's/times\[ii + 1\] = t_quantile/times[ii + 1] = np.asarray(t_quantile).item()/' \
-  /path/to/envs/ibd-sims/lib/python3.12/site-packages/hapne/backend/DemographicHistory.py
-
-# Fix array ravel in utils.py
-sed -i 's/n = n.ravel()/n = np.asarray(n).ravel()/' \
-  /path/to/envs/ibd-sims/lib/python3.12/site-packages/hapne/utils.py
+HAPNE=$(python -c "import hapne, os; print(os.path.dirname(hapne.__file__))")
+sed -i 's/times\[ii + 1\] = t_quantile/times[ii + 1] = np.asarray(t_quantile).item()/' $HAPNE/backend/DemographicHistory.py
+sed -i 's/n = n.ravel()/n = np.asarray(n).ravel()/' $HAPNE/utils.py
 ```
 
-Replace `/path/to/envs/ibd-sims` with the actual path to your conda environment (e.g. `~/.conda/envs/ibd-sims`). You can find it with:
+## Running simulations
+
+Everything goes through `run.py`. A simulation is described by a YAML config file; `yaml_files/` has ready-made ones.
 
 ```bash
-conda env list
-```
-
-These patches are only needed if you intend to run HapNe-IBD or HapNe-LD post-processing. They have no effect on IBDNe or the simulation itself.
-
-## Quick start
-
-All commands go through `run.py`, which dispatches to the appropriate module in `ibd_sims/`.
-
-**Test with the debug config first** to make sure everything is wired up:
-
-```bash
-python run.py simulate yaml_files/debug.yaml --local
-```
-
-**Run on a Slurm cluster (default):**
-
-```bash
+# Run on a Slurm cluster (the default) and wait for it to finish
 python run.py simulate yaml_files/arg1.yaml
-```
 
-**Run locally:**
-
-```bash
+# Run on this computer, at most 8 jobs at a time
 python run.py simulate yaml_files/arg1.yaml --local --workers 8
-```
 
-**Submit to Slurm and exit immediately (no waiting):**
-
-```bash
+# Submit to Slurm and return immediately
 python run.py simulate yaml_files/arg1.yaml --no-wait
 ```
 
-**Resume a previous run** by passing the output directory instead of a YAML file:
+**Change settings without editing the file** with `--set`:
 
 ```bash
-python run.py simulate path/to/existing/run/
+python run.py simulate yaml_files/arg1.yaml --set iter=5 pedigree.mating=mono
 ```
 
-**Override YAML parameters on the command line:**
+**Pick up where you left off.** If a run was interrupted, pass its output folder instead of a config. Finished chromosomes are skipped.
 
 ```bash
-python run.py simulate yaml_files/arg1.yaml --set iter=5 --set pedigree.mating=mono
+python run.py simulate path/to/run_folder/
 ```
 
-**Limit the number of queued Slurm jobs** (useful if your cluster has a job queue limit):
+Each run gets its own output folder, named after the config's `label`. Running the same config again creates a new folder (`..._001`, `..._002`) rather than overwriting.
+
+See [all command-line options](docs/configuration.md#command-line-options), including `--max-jobs` for clusters with queue limits.
+
+### Ready-made configs
+
+| Config | History | People | Mating model | Replicates |
+|--------|---------|--------|--------------|------------|
+| `quickstart.yaml` | Constant Ne 10,000 | 200 | Coalescent | 1 (tiny, no external tools) |
+| `debug.yaml` | Constant Ne 10,000 | 1,000 | Coalescent | 1 |
+| `arg1.yaml` | Constant Ne 10,000 | 1,000 | Random, 25-generation pedigree | 50 |
+| `arg2.yaml` | Constant Ne 10,000 | 1,000 | Monogamous, 25-generation pedigree | 50 |
+| `arg3.yaml` | Constant Ne 100,000 | 1,000 | Random, 25-generation pedigree | 50 |
+| `arg4.yaml` | Constant Ne 100,000 | 1,000 | Monogamous, 25-generation pedigree | 50 |
+| `arg5.yaml` | Out-of-Africa (2 populations) | 2,000 | Random, 25-generation pedigree | 50 |
+| `arg6.yaml` | Out-of-Africa (2 populations) | 2,000 | Monogamous, 25-generation pedigree | 50 |
+| `arg7.yaml` | Quebec (empirical tree sequences) | 10,000 | n/a | 1 |
+| `arg8.yaml` | Ashkenazi | 1,000 | Random, 12-generation pedigree | 50 |
+
+Apart from `quickstart.yaml`, these call IBD with hap-ibd and run no analyses by default. Add `--set tskit_ibd=true` to skip hap-ibd. The other files in `yaml_files/` are older configs or [experiment](docs/experiments.md) files.
+
+## Estimating Ne and other analyses
+
+After simulating, you run analyses ("post-processing") on the IBD segments. Choose them with `post_process` in the config:
 
 ```bash
-python run.py simulate yaml_files/arg1.yaml --max-jobs 100
+python run.py postprocess path/to/run_folder/ --set post_process=ibdne
 ```
 
-The default is 1000. When the total number of tasks exceeds `--max-jobs`, the pipeline automatically splits them into batches and submits the next batch only after the previous one completes. Batch size is set to approximately `max_jobs // 4` tasks. Note that `--no-wait` is ignored when batching is required.
+You can re-run analyses as often as you like with different settings, without re-simulating.
 
-## Pipeline overview
+| Analysis | What it does | Needs |
+|----------|--------------|-------|
+| `ibdne` | Estimates Ne over time with IBDNe | Java, `ibdne_jar` |
+| `hapne_ibd` | Estimates Ne over time with HapNe-IBD | [HapNe fixes](#optional-hapne) |
+| `hapne_ld` | Estimates Ne from linkage disequilibrium (experimental) | HapNe fixes, genotypes (not `tskit_ibd`) |
+| `ibd_summary` | Counts segments and sharing pairs; total and mean IBD | nothing |
+| `purple_nodes` | Computes the purple-node matrix | nothing |
 
-The pipeline has three phases, each accessible as a subcommand of `run.py`.
+Run several at once with a comma-separated list: `--set post_process=ibdne,ibd_summary`.
 
-### Phase 1: Simulation
+**Tweaking settings:** each analysis has a block in the config (e.g. `ibdne:`) with its settings. Override them like this:
 
 ```bash
-python run.py simulate yaml_files/arg1.yaml
+python run.py postprocess path/to/run_folder/ --set post_process=ibdne ibdne.mincm=3 ibdne.nboots=100
 ```
 
-This produces IBD segments. For each replicate, the outputs are:
+**Numbered results:** results go in numbered folders, e.g. `ibdne/001/`, `ibdne/002/`. Running again with the same settings reuses the same folder (finished replicates are skipped); changing a setting makes a new one. Each folder has an `args.yaml` recording the exact settings used.
 
-- `iter{n}.ibd.gz` — concatenated IBD segments across all chromosomes
-- `iter{n}.tmrca.gz` — TMRCA annotations for each IBD segment
-- `iter{n}.map` — concatenated genetic map
+**Subsets of people:** most analyses take a `filter` setting to analyse everyone (`null`), or a random, related-enriched or unrelated subset.
 
-Optional outputs (with `keep_all_files: true`): concatenated VCF, HBD, and per-chromosome tree sequences. With `tskit_ibd: true` no VCF or HBD file is produced, so `keep_all_files` has no effect on them.
+**Where it runs:** post-processing runs on your computer by default, even if the simulation ran on Slurm. Add `--set local=false` to submit it to Slurm.
 
-### Phase 2: Post-processing
+Every setting for every analysis is in the [configuration reference](docs/configuration.md#post-processing-settings).
+
+## Plotting
+
+Plotting works on [experiments](docs/experiments.md) (a folder of related runs):
 
 ```bash
-python run.py postprocess path/to/run/
+python ibd_sims/plot_Ne.py my_experiment/
 ```
 
-Post-processing runs analyses on the simulation output. It can be run independently of the simulation, and re-run with different parameters without re-simulating.
+This saves one plot per simulation in `my_experiment/plots/`, comparing every IBDNe and HapNe-IBD estimate with the true Ne. See [plotting an experiment](docs/experiments.md#plotting-an-experiment) for options.
 
-```bash
-# Re-run IBDNe with different parameters
-python run.py postprocess path/to/run/ --set ibdne.nboots=100 ibdne.mincm=3
+## Understanding the output
 
-# Submit post-processing jobs and exit immediately
-python run.py postprocess path/to/run/ --no-wait
-
-# Run via Slurm instead of locally
-python run.py postprocess path/to/run/ --set local=false
-```
-
-Post-processing output goes into numbered subdirectories (e.g., `ibdne/001/`, `ibdne/002/`). If you re-run with the same analysis parameters, it overwrites the matching directory. If you change parameters, it creates a new one. Each subdirectory contains an `args.yaml` recording exactly which parameters were used for that run.
-
-### Phase 3: Plotting
-
-```bash
-python run.py plot path/to/run/ --ibdne 001 003 --hapne_ibd 001
-```
-
-Plots Ne estimates from one or more post-processing runs against the true demographic history. You specify which numbered subdirectories to include for each tool:
-
-```bash
-# Plot HapNe-LD only
-python run.py plot path/to/run/ --hapne_ld 001 002
-
-# Suppress the log2-Ne vertical reference lines
-python run.py plot path/to/run/ --ibdne 001 --no-vlines
-```
-
-Line labels are built automatically from each subdirectory's `args.yaml` (demographic model, sample size, mating model, filter). Lines are colour-coded by tool — greens for IBDNe, oranges/reds for HapNe-IBD, blue-purples for HapNe-LD — with dash styles cycling within each tool. When more than 10 replicates are present, a 5th–95th percentile band is shown. Output is saved to `{path}/Ne_plot.png`.
-
-## Experiment manager
-
-For running batches of simulations across multiple demographic histories, mating models, and genome configurations, use the experiment manager (`ibd_sims/experiment.py`).
-
-### Workflow
-
-**1. Create an experiment meta-YAML** (see `yaml_files/experiment.yaml` for an example):
-
-```yaml
-experiment: my_experiment
-
-# Fixed across all simulations
-iter: 50
-samples: 1000
-sim_workers: 30
-
-# Default resources (can be overridden per-demography or per-mating)
-gb: 8
-sim_min: 30
-nthreads: 8
-keep_all_files: false
-
-# Axes to vary
-end_chr:
-  22: {}        # no resource overrides
-  30:
-    resources:
-      sim_min: 45  # override for this end_chr
-
-demographies:
-  constant_Ne_10k:
-    object: constant_Ne
-    path: ibd_sims/demography.py
-
-  constant_Ne_100k:
-    object: constant_Ne100k
-    path: ibd_sims/demography.py
-    resources:
-      sim_min: 45      # overrides default sim_min for this demography
-
-custom_sims:           # these do NOT iterate over end_chr or mating
-  quebec:
-    object: load_random_10000
-    path: ibd_sims/load_quebec.py
-    resources:
-      gb: 32
-
-mating:
-  DTWF_di:
-    pedigree_mode: true
-    mating: di
-    gen_end: 25
-    pedigree_file: null
-
-post_processing: ibdne,hapne_ibd
-```
-
-Resource overrides follow a `max()` rule — if multiple axes specify `sim_min`, the largest value is used for that combination.
-
-**2. Preview the experiment plan (no files created):**
-
-```bash
-python ibd_sims/experiment.py describe yaml_files/experiment.yaml
-```
-
-**3. Initialise the experiment (creates directories and generates YAML files):**
-
-```bash
-python ibd_sims/experiment.py init yaml_files/experiment.yaml
-```
-
-This creates:
-```
-my_experiment/
-└── yaml_files/
-    ├── constant_Ne_10k__DTWF_di__chr22.yaml
-    ├── constant_Ne_10k__DTWF_di__chr30.yaml
-    ├── constant_Ne_100k__DTWF_di__chr22.yaml
-    ├── constant_Ne_100k__DTWF_di__chr30.yaml
-    └── quebec.yaml
-```
-
-**4. Get the commands to run:**
-
-```bash
-# All simulations (--no-wait is the default: all Slurm jobs submitted in parallel)
-python ibd_sims/experiment.py commands yaml_files/experiment.yaml
-
-# Only simulations not yet complete
-python ibd_sims/experiment.py commands yaml_files/experiment.yaml --pending-only
-
-# Serialize: wait for each simulation to finish before submitting the next
-python ibd_sims/experiment.py commands yaml_files/experiment.yaml --wait
-```
-
-**5. Check progress:**
-
-```bash
-python ibd_sims/experiment.py status yaml_files/experiment.yaml
-```
-
-### Adding post-processing
-
-After simulations are complete, edit the generated YAML files in `my_experiment/yaml_files/` to add post-processing blocks, then run:
-
-```bash
-python run.py postprocess my_experiment/constant_Ne_10k__DTWF_di__chr30/ --no-wait
-```
-
-## Postprocessing experiment manager
-
-For running batches of post-processing analyses across all simulations in an experiment — varying parameters like IBD filters or minimum segment length — use the postprocessing experiment manager (`ibd_sims/postprocess_experiment.py`).
-
-### Workflow
-
-**1. Create a postprocess meta-YAML** (see `yaml_files/postprocess_experiment.yaml` for an example):
-
-```yaml
-experiment_directory: my_experiment
-
-postprocess: [ibdne, hapne_ibd, ibd_summary]
-
-ibdne:
-  path: ibd_sims/post_modules.py
-  object: PostProcessIBDNe
-  mincm: 2
-  trimcm: 0.2
-  gmin: 1
-  gmax: 300
-  nboots: 80
-  nits: 1000
-  npairs: 0
-  workers: 8
-  mem_gb: 16
-  time_min: 120
-
-  combo_args:
-    filtersamples: [true, false]
-    filter: [null, related, unrelated]
-
-  add_combo:
-    combo1:
-      filtersamples: true
-      filter: null
-
-  ignore_combo:
-    combo1:
-      filtersamples: true
-      filter: null
-
-hapne_ibd:
-  path: ibd_sims/post_modules.py
-  object: PostProcessHapNeIBD
-  workers: 4
-  mem_gb: 16
-  time_min: 120
-
-  combo_args:
-    filter: [null, related, unrelated]
-
-ibd_summary:
-  path: ibd_sims/post_modules.py
-  object: PostProcessIBDSummary
-  mem_gb: 1
-  time_min: 10
-  workers: 1
-  filters: [null, related, unrelated]
-```
-
-`combo_args` defines the axes to vary; every combination is generated automatically. `add_combo` and `ignore_combo` let you manually add or remove specific combinations.
-
-**2. Preview the postprocessing plan (no files created):**
-
-```bash
-python ibd_sims/postprocess_experiment.py describe yaml_files/postprocess_experiment.yaml
-```
-
-**3. Initialise (creates the tracking file and base config):**
-
-```bash
-python ibd_sims/postprocess_experiment.py init yaml_files/postprocess_experiment.yaml
-```
-
-This creates two files in `my_experiment/`:
-
-- `postprocess.tsv` — tracking file with one row per (postprocess, combo) combination and a `status` column (`new`, `rerun`, or `complete`)
-- `postprocess.yaml` — base postprocessing config (all args except combo axes), used by the generated commands
-
-**4. Get the commands to run:**
-
-```bash
-# Print all pending commands and write a bash script
-python ibd_sims/postprocess_experiment.py commands yaml_files/postprocess_experiment.yaml
-
-# Submit as Slurm jobs instead of running locally
-python ibd_sims/postprocess_experiment.py commands yaml_files/postprocess_experiment.yaml --no-local
-
-# With --no-wait to fire-and-forget Slurm job submission
-python ibd_sims/postprocess_experiment.py commands yaml_files/postprocess_experiment.yaml --no-wait
-```
-
-This prints one `python run.py postprocess` command per (simulation run × postprocess combo) pair and writes `my_experiment/postprocess_scripts/run.sh`. Only rows with `status` of `new` or `rerun` are included.
-
-By default, running the bash script serialises execution — each command completes before the next starts. Pass `--no-wait` if you want all Slurm jobs submitted at once without waiting.
-
-**5. Check progress:**
-
-```bash
-python ibd_sims/postprocess_experiment.py status yaml_files/postprocess_experiment.yaml
-```
-
-This inspects the actual output files for each (postprocess, combo) row across all simulation directories and prints a progress table:
+A finished run folder looks like this (one set of `iter` files per replicate):
 
 ```
-postprocess  directory  progress  status
------------------------------------------
-ibdne        ibdne/001  45/50     rerun
-ibdne        ibdne/002  50/50     complete
-hapne_ibd    hapne_ibd/001  0/50  new
-```
-
-It also updates `postprocess.tsv` with the current status (`complete` if all sims are done, `rerun` if partially done, `new` if none have started). Running `commands` afterwards will automatically pick up any incomplete rows.
-
-## YAML configuration
-
-Each simulation is configured via a YAML file with two sections: simulation parameters at the top level, and post-processing module blocks below.
-
-### Simulation parameters
-
-```yaml
-# Housekeeping
-base_dir: ibd_sims          # parent directory for output (null = current dir)
-dir_name: ibd-sims          # subdirectory name within the run directory
-keep_all_files: false       # if true, also saves VCF and HBD files
-tskit_ibd: false            # if true, call IBD directly from the tree sequence
-                            # (no VCF, no hap-ibd; default: false)
-
-# Computational resources (simulation)
-gb: 8                       # memory in GB per simulation job
-sim_min: 30                 # wall-time in minutes for simulation jobs
-nthreads: 8                 # threads for hap-ibd (not used when tskit_ibd is true)
-sim_workers: 1              # number of chromosomes to simulate in parallel within
-                            # a per-iteration job (default: 1 = sequential)
-
-# Simulation
-iter: 50                    # number of independent replicates
-samples: 1000               # number of diploid individuals
-end_chr: 30                 # chromosomes to simulate (30 = 30x100Mb; 22 = real autosomes)
-subsample_frac: 0.25        # fraction of samples used for random/related/unrelated
-                            # subsets during filtering (default: 0.25, i.e. N/4)
-
-# Demographic model (one of custom_demo or custom_sim must be set)
-custom_demo:
-  path: demography.py       # Python file with an msprime.Demography object
-  object: constant_Ne       # variable name in that file
-custom_sim:
-  path: null                # Python file with a custom tree-sequence loader
-  object: null
-
-# Mating model
-pedigree:
-  pedigree_mode: true       # use Wright-Fisher pedigree for recent generations
-  mating: di                # "di" (random) or "mono" (monogamous)
-  gen_end: 25               # pedigree generations before coalescent takeover
-  pedigree_file: null       # path to pre-existing pedigree file (optional)
-```
-
-#### `tskit_ibd`: calling IBD from the tree sequence
-
-By default, each chromosome is written to a thinned VCF and IBD is detected with hap-ibd. Setting `tskit_ibd: true` (a top-level boolean, default `false`) skips both steps and calls IBD directly from the simulated tree sequence, avoiding the cost of writing a VCF and running hap-ibd. The output is written in the same format as hap-ibd's `.ibd.gz` (tab-separated, no header, columns: `id1 hap1 id2 hap2 chr start end cM`), so post-processing needs no changes.
-
-How it differs from the hap-ibd route:
-
-- **Exact IBD.** Segments come from the true genealogy, so there is no SNP thinning, phasing, or detection error. Use the default route when you want IBD with realistic detection error.
-- **Segment boundaries** are the exact tree-sequence breakpoints rather than the first and last SNP of a segment.
-- **Segments** are stretches with a single most recent common ancestor, kept if they are at least 2 cM long (`min_cm`); touching segments are merged.
-- **No VCF or HBD output.** `keep_all_files` has no effect on these, and bcftools is not required.
-- **Genetic map.** With no SNPs, the `.map` file is built from the recombination rate: a constant rate gives rows every 10 kb along the chromosome, and an `msprime.RateMap` gives the map's own breakpoints (merged with the same 10 kb grid). Every called segment's start and end is also added as a row, and the last row is always the end of the chromosome.
-- **Not used:** `hap_ibd_jar` and `maf_pickle` in `setup.yaml`, and `nthreads`.
-- **TMRCA annotations** are computed as in the default route.
-- **Genotype-based analyses are unavailable** (HapNe-LD needs genotypes). IBD-based post-processing (IBDNe, HapNe-IBD, `purple_nodes`, `ibd_summary`) is unaffected.
-
-```yaml
-tskit_ibd: true
-```
-
-#### `sim_workers` and job mode
-
-The pipeline uses two submission modes depending on the number of replicates:
-
-- **Per-iteration mode** (default for `iter >= 3`): one Slurm job per replicate, all chromosomes run within that job. `sim_workers` controls how many chromosomes are simulated in parallel within the job (requires proportionally more CPUs, set via `cpus_per_task`). Memory is scaled by `sim_workers` automatically.
-- **Per-chromosome mode** (`iter < 3`): one Slurm job per (replicate, chromosome) pair; `sim_workers` is not used.
-
-#### `subsample_frac` and sample filtering
-
-When IBD filtering is enabled (`filter: related`, `filter: unrelated`, or `filter: random`), the pipeline subsamples to `round(samples * subsample_frac)` individuals. The default of 0.25 gives N/4 samples. The subsampled node lists are cached as `iter{n}_random.txt`, `iter{n}_related.txt`, and `iter{n}_unrelated.txt` next to each IBD file.
-
-### Post-processing parameters
-
-Set `post_process` to a comma-separated list of modules to run, or `null` to skip all post-processing.
-
-To run post-processing, edit the file or use `--set`:
-
-```bash
-python run.py simulate yaml_files/arg1.yaml --set post_process=ibdne
-```
-
-Each module has its own nested config block with `object` (Python class name), `path` (Python file), analysis parameters, and optional resource overrides (`workers`, `mem_gb`, `time_min`).
-
-#### IBD filtering
-
-The `filter` parameter (supported by IBDNe, HapNe-IBD, HapNe-LD, and IBD summary) controls which samples are included in the analysis:
-
-| Value | Behaviour |
-|-------|-----------|
-| `null` / `none` | All samples; no filtering |
-| `random` | Random subsample of `round(N * subsample_frac)` individuals |
-| `related` | Subset enriched for 1st/2nd/3rd-degree relative pairs |
-| `unrelated` | Subset pruned of 1st/2nd/3rd-degree relative pairs |
-
-#### Built-in post-processors
-
-**IBDNe** (`PostProcessIBDNe`):
-
-```yaml
-ibdne:
-  path: post_modules.py
-  object: PostProcessIBDNe
-  filter: null              # IBD filtering mode (see above)
-  filtersamples: false      # IBDNe's own internal sample-based filtering
-  mincm: 2                  # minimum IBD segment length (cM)
-  trimcm: 0.2               # IBD segment trimming (cM)
-  gmin: 1                   # minimum generation for Ne estimation
-  gmax: 300                 # maximum generation for Ne estimation
-  nboots: 80                # number of bootstrap replicates
-  nits: 1000                # number of EM iterations
-  npairs: 0                 # max pairs (0 = all)
-  workers: 8
-  mem_gb: 16
-  time_min: 120
-```
-
-**HapNe-IBD** (`PostProcessHapNeIBD`):
-
-```yaml
-hapne_ibd:
-  path: post_modules.py
-  object: PostProcessHapNeIBD
-  filter: null              # IBD filtering mode (see above)
-  workers: 4
-  mem_gb: 16
-  time_min: 120
-```
-
-**HapNe-LD** (`PostProcessHapNeLD`):
-
-```yaml
-hapne_ld:
-  path: post_modules.py
-  object: PostProcessHapNeLD
-  filter: null              # IBD filtering mode (see above)
-  workers: 4
-  mem_gb: 16
-  time_min: 120
-```
-
-**IBD Summary** (`PostProcessIBDSummary`):
-
-Summarises IBD segments across all iterations and filter modes. For each (iteration, filter) combination, computes: number of samples, number of IBD segments, number of sharing pairs, mean pairwise IBD (cM), and total IBD (cM). Per-iteration results are written to `iter{n}.tsv`; the full run is concatenated into `ibd_summary.tsv`.
-
-```yaml
-ibd_summary:
-  path: post_modules.py
-  object: PostProcessIBDSummary
-  mincm: 2                  # minimum segment length threshold (cM)
-  filters: [null, related, unrelated]   # filter modes to summarise
-  workers: 1
-  mem_gb: 1
-  time_min: 10
-```
-
-**Purple nodes** (`PostProcessPurple`):
-
-```yaml
-purple_nodes:
-  path: post_modules.py
-  object: PostProcessPurple
-  workers: 4
-  mem_gb: 8
-  time_min: 60
-```
-
-## Output structure
-
-```
-run_directory/
-├── args.yaml                 # simulation config
-├── iter1.ibd.gz              # concatenated IBD segments
-├── iter1.map                 # concatenated genetic map
-├── iter1.tmrca.gz            # TMRCA annotations
-├── iter1_random.txt          # cached random-subsample node list
-├── iter1_related.txt         # cached related-subset node list
-├── iter1_unrelated.txt       # cached unrelated-subset node list
-├── ibdne/
-│   ├── 001/
-│   │   ├── args.yaml         # analysis config for this run
-│   │   ├── iter1.ne          # IBDNe output
-│   │   └── ...
-│   └── 002/                  # re-run with different parameters
-├── hapne_ibd/
-│   └── 001/
-├── hapne_ld/
-│   └── 001/
-├── purple_nodes/
-│   └── 001/
-├── ibd_summary/
-│   └── 001/
-│       ├── args.yaml         # analysis config for this run
-│       ├── iter1.tsv         # per-iteration intermediate (one row per filter mode)
-│       ├── iter2.tsv
-│       └── ibd_summary.tsv   # concatenated summary across all iterations
-├── Ne_plot.png
-├── slurm/
+quickstart/quickstart/
+├── args.yaml            # the exact settings used for this run
+├── iter1.ibd.gz         # IBD segments
+├── iter1.map            # genetic map (PLINK format: chr, id, cM, bp)
+├── iter1.tmrca.gz       # when each segment's common ancestor lived (TMRCA)
+├── iter1_related.txt    # people chosen for the "related" subset (also _random, _unrelated)
+├── ibdne/001/           # results of each analysis run, in numbered folders
+├── ibd_summary/001/
+├── slurm/               # job logs: look here first if something fails
 └── errors/
 ```
 
-## Example configurations
+Each line of `iter{n}.ibd.gz` is one segment shared by two people, in [hap-ibd's format](https://github.com/browning-lab/hap-ibd#output-files):
 
-Ready-to-run configurations are provided in `yaml_files/`:
-
-| File | Demographic model | Samples | Mating | Pedigree gens | Replicates |
-|------|-------------------|---------|--------|---------------|------------|
-| `debug.yaml` | Constant Ne (10k) | 1,000 | coalescent | — | 1 |
-| `arg1.yaml` | Constant Ne (10k) | 1,000 | Random | 25 | 50 |
-| `arg2.yaml` | Constant Ne (10k) | 1,000 | Monogamous | 25 | 50 |
-| `arg3.yaml` | Constant Ne (100k) | 1,000 | Random | 25 | 50 |
-| `arg4.yaml` | Constant Ne (100k) | 1,000 | Monogamous | 25 | 50 |
-| `arg5.yaml` | Out-of-Africa (2-pop) | 2,000 | Random | 25 | 50 |
-| `arg6.yaml` | Out-of-Africa (2-pop) | 2,000 | Monogamous | 25 | 50 |
-| `arg7.yaml` | Quebec (empirical) | 10,000 | — | — | 1 |
-| `arg8.yaml` | Ashkenazi | 1,000 | Random | 12 | 50 |
-
-All configs have `post_process: null` by default.
-
-## Adding a new demographic model
-
-Define an `msprime.Demography` object in a Python file and reference it in the YAML:
-
-```yaml
-custom_demo:
-  path: my_demography.py
-  object: my_model
+```
+id1  hap1  id2  hap2  chromosome  start_bp  end_bp  length_cM
 ```
 
-Several models are provided in `demography.py`: `constant_Ne` (10k), `constant_Ne100k` (100k), `euro_bottleneck`, `himba`, `ooa2` (two-population Out-of-Africa), and `ashkenazi` (via stdpopsim).
+## Writing your own config
 
-## Writing a custom post-processing module
+The easiest start is to copy `yaml_files/quickstart.yaml` (small and commented) or one of the `arg*.yaml` files. These are the settings you'll change most:
 
-Subclass `PostProcessor` from `post_process.py`:
+| Setting | What it controls | Example |
+|---------|------------------|---------|
+| `label` / `base_dir` | Output folder name and parent folder | `label: my_run` |
+| `iter` | Number of independent replicates | `50` |
+| `samples` | Number of people (diploid individuals) | `1000` |
+| `end_chr` | Genome: `30` = thirty 100 Mb chromosomes, `22` = human autosomes, `1`/`2` = one or two 50 Mb chromosomes | `30` |
+| `custom_demo` | Demographic history: a file and an `msprime.Demography` in it | `object: ooa2` |
+| `pedigree.pedigree_mode` | Use an explicit pedigree for recent generations | `true` |
+| `pedigree.mating` | `di` (random) or `mono` (monogamous) | `di` |
+| `tskit_ibd` | `true` = exact IBD from the genealogy (fast, no hap-ibd); `false` = hap-ibd on genotypes (realistic errors) | `false` |
+| `gb`, `sim_min` | Memory (GB) and time limit (minutes) per chromosome | `8`, `30` |
+| `post_process` | Analyses to run after simulating | `ibdne,ibd_summary` |
 
-```python
-from post_process import PostProcessor
+Built-in histories (in `ibd_sims/demography.py`): `constant_Ne`, `constant_Ne100k`, `euro_bottleneck`, `himba`, `expon`, `ooa2`, `ashkenazi`. You can also [add your own](docs/extending.md#adding-a-demographic-model).
 
-class MyAnalysis(PostProcessor):
-    sub_config_key = "my_analysis"
-    resource_fields = ["local", "workers", "mem_gb", "time_min"]
+Every setting is in the [configuration reference](docs/configuration.md).
 
-    def execute(self, wait=True):
-        self._execute_helper()
-        if self.single_iter:
-            self._single_iter(self.iter_n)
-        else:
-            self._execute_loop(wait=wait)
+## Troubleshooting
 
-    def _single_iter(self, iter_n):
-        cfg = self._get_sub_config()
-        prefix = f"{self.path}/iter{iter_n}"
-        # Read from: {prefix}.ibd.gz, {prefix}.map, {prefix}.tmrca.gz
-        # Write to:  self.out_dir
-```
-
-Then add it to your YAML:
-
-```yaml
-post_process: ibdne,my_analysis
-
-my_analysis:
-  object: MyAnalysis
-  path: my_analysis.py
-  my_param: 42
-  workers: 4
-  time_min: 60
-```
-
-Key things to know:
-
-- `sub_config_key` must match the YAML block name exactly.
-- `resource_fields` lists fields excluded from config comparison when deciding whether to reuse an existing output directory.
-- `self._get_sub_config()` returns the config object for your module, with all YAML values as attributes.
-- `self._get_resource(name)` checks the module config first, then falls back to top-level defaults.
-- `self._execute_loop()` handles both local and Slurm execution based on the `local` resource setting.
-- `self.out_dir` is set by `_execute_helper()` and points to the numbered output subdirectory.
-- Check `self.single_iter` to distinguish single-iteration vs. full runs.
-
-**Modules with a post-loop aggregation step** (like `PostProcessIBDSummary`) should guard that step behind `not self.single_iter`. In single-iter mode, `execute()` calls `_single_iter(self.iter_n)` directly and returns — the aggregation step is never reached. This means running a single iteration only writes that iteration's intermediate file; the final aggregated output (e.g. `ibd_summary.tsv`) won't be created or updated until the full loop runs. To get an up-to-date aggregated file after a single-iter run, re-run the full loop (already-complete iterations will be skipped via `is_iter_complete`).
-
-## SNP density and MAF distribution
-
-Simulated VCFs are thinned to match a realistic SNP density and minor allele frequency distribution, controlled by `ukb_snps.pkl`. A default pickle derived from UK Biobank genotype data is included. To generate your own:
+**`conda env create` fails (e.g. on macOS):** `environment.yaml` pins exact Linux builds. Create a plain environment instead:
 
 ```bash
-python -m ibd_sims.maf_buckets \
-    --afreq-chr1 /path/to/chr1.afreq \
-    --bim-chr1 /path/to/chr1.bim \
-    --output my_snps.pkl
+conda create -n ibd-sims python=3.12
+conda activate ibd-sims
+pip install msprime tskit stdpopsim submitit pyyaml numpy pandas scipy matplotlib seaborn networkx tszip polars
+pip install hapne==1.20240807 pandas-plink   # only needed for HapNe
 ```
 
-Then point `maf_pickle` in `setup.yaml` to your output file.
+**A job failed. Where do I look?** Open `<run_folder>/slurm/*_log.err` (each job's error log, used for local runs too) and `<run_folder>/errors/`.
 
-## Repository structure
+**`ModuleNotFoundError: No module named 'simulations'`** (or `post_modules`, `simulate`, ...): Python can't find the pipeline code. Run step 2 of the [quick start](#quick-start-about-5-minutes) inside the activated `ibd-sims` environment.
 
-```
-├── run.py                    # single entry point (simulate / postprocess / plot)
-├── setup.yaml                # machine-specific path configuration
-├── yaml_files/               # per-experiment simulation configs
-└── ibd_sims/                 # pipeline source code
-    ├── experiment.py         # experiment manager (plan and track batches of simulations)
-    ├── postprocess_experiment.py  # postprocessing experiment manager (batch post-processing across simulations)
-    ├── simulate.py           # simulation orchestrator
-    ├── simulations.py        # core simulation logic (msprime, VCF, hap-ibd, TMRCA)
-    ├── ibd_from_ts.py        # call IBD directly from the tree sequence (`tskit_ibd: true`)
-    ├── post_process.py       # post-processing orchestrator, PostProcessor ABC
-    ├── post_modules.py       # built-in post-processors: IBDNe, HapNe-IBD, HapNe-LD, purple nodes, IBD summary
-    ├── plot_Ne.py            # plot Ne estimates vs true Ne
-    ├── demography.py         # demographic model definitions
-    ├── wf_pedigree.py        # Wright-Fisher pedigree generation
-    ├── write_vcf.py          # VCF and genetic map output with realistic SNP thinning
-    ├── maf_buckets.py        # build SNP density/MAF pickle from plink files
-    ├── run_hapne.py          # HapNe-IBD and HapNe-LD runner utilities
-    ├── filter_ibd.py         # IBD filtering (related/unrelated/random subsets)
-    ├── purple.py             # purple node matrix computation
-    ├── concat_tmrca.py       # concatenate per-chromosome TMRCA files
-    ├── analyze_experiment.py # load and compare Ne estimates across experiment runs
-    └── utils.py              # CLI override utilities
-```
+**`FileNotFoundError` for `ibd_sims/demography.py` or `ukb_snps.pkl`:** run commands from the repository root.
 
-## TODO
+**`UnboundLocalError: ... 'sequence_length'`:** `end_chr` must be 1, 2, 22 or 30.
 
-- [ ] Add a global `--max-jobs` option to `ibd_sims/experiment.py commands` that passes through to each generated `run.py simulate` command. Currently `--max-jobs` only limits jobs within a single simulation run, so with `--no-wait` (the default) an experiment with many simulations can submit more total Slurm jobs than the cluster's per-user queue limit.
-- [ ] Add *better* support for resumption of runs, e.g., re-running only some iterations.
-- [ ] `tskit_ibd: true` (exact IBD from `tskit`, no hap-ibd) does not yet fall back to `tskit` automatically when no hap-ibd path is provided.
-- [ ] HapNe-LD currently is slow/does not work.
-- [ ] Long-term goal: integrate ped-sim for more realistic IBD in close relatives.
-- [ ] For a custom sim, the user needs to specify end_chr. The current strategy is hacky: put it under resources to override the top level end_chr. Low priority: implement in a better way.
+**hap-ibd or IBDNe errors:** check that the jar paths in `setup.yaml` are right and that `java -version` works. To skip hap-ibd entirely, use `--set tskit_ibd=true`.
+
+**`bcftools not found`:** only needed with `keep_all_files: true`. Install bcftools or set it to `false`.
+
+**Jobs run out of memory:** increase `gb` (simulation) or the analysis's `mem_gb`.
+
+**Too many Slurm jobs for my cluster's queue limit:** use `--max-jobs`, e.g. `--max-jobs 200`.
+
+## More documentation
+
+- [Configuration reference](docs/configuration.md): every setting and command-line option
+- [Experiments](docs/experiments.md): running and plotting many simulations at once
+- [Extending the pipeline](docs/extending.md): your own demographic models, tree sequences and analyses; how a simulation runs; repository layout
+- [`llm.txt`](llm.txt): a single-file summary to paste into an AI assistant when you need help
+
+## Known limitations and to-do
+
+- `python run.py plot` is out of date and fails; use `python ibd_sims/plot_Ne.py` on an experiment folder instead.
+- HapNe-LD is slow and may not work.
+- `tskit_ibd: true` is not chosen automatically when no hap-ibd jar is configured.
+- `ibd_sims/experiment.py commands` has no global `--max-jobs`, so with `--no-wait` (its default) a large experiment can exceed a cluster's per-user Slurm queue limit.
+- Resuming re-runs every unfinished replicate; you can't yet pick specific replicates.
+- Analyses listed in a config only run automatically during `run.py simulate` when `iter` is 1 or 2. With more replicates, run `run.py postprocess` afterwards.
+- Custom simulations (`custom_sim`) set `end_chr` through a workaround (under `resources` in experiment files).
+- Long-term: integrate ped-sim for more realistic IBD between close relatives.

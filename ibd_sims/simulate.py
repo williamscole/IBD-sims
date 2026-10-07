@@ -132,6 +132,9 @@ def make_output_dir(yaml_path, args):
 
 def is_sim_complete(path, iter_n, chrom):
     """Check whether a simulation job already completed successfully."""
+    # Per-chromosome files are deleted once an iteration is concatenated
+    if os.path.exists(f"{path}/iter{iter_n}.ibd.gz"):
+        return True
     ibd_file = f"{path}/iter{iter_n}_chr{chrom}.ibd.gz"
     tmrca_file = f"{path}/iter{iter_n}_chr{chrom}.tmrca.pkl"
     map_file = f"{path}/iter{iter_n}_chr{chrom}.map"
@@ -143,10 +146,25 @@ def is_post_complete(path, iter_n):
     return os.path.exists(f"{path}/iter{iter_n}.ibd.gz")
 
 
+def _wait_for_local_jobs(jobs):
+    """Block until local (non-Slurm) jobs finish. Return list of failed jobs."""
+    failed = []
+    for job in jobs:
+        try:
+            job.result()
+        except Exception as e:
+            print(f"Job {job.job_id} failed: {e}")
+            failed.append(job)
+    return failed
+
+
 def wait_for_jobs(jobs, path=None, end_chr=None):
     """Poll jobs until all finish. Auto-releases held jobs. Return list of failed jobs."""
-    pending = list(jobs)
-    failed = []
+    # Local jobs can't be queried with sacct/squeue
+    local_jobs = [job for job in jobs if not isinstance(job, submitit.SlurmJob)]
+    failed = _wait_for_local_jobs(local_jobs)
+
+    pending = [job for job in jobs if isinstance(job, submitit.SlurmJob)]
     while pending:
         # Single sacct call for all pending jobs instead of one per job
         states = _sacct_states_batch([job.job_id for job in pending])
@@ -165,6 +183,25 @@ def wait_for_jobs(jobs, path=None, end_chr=None):
         if pending:
             time.sleep(10)
     return failed
+
+
+def map_array(executor, fn, *iterables, n_workers=None):
+    """Submit an array of jobs.
+
+    On Slurm this is a plain executor.map_array. Locally, submitit starts every
+    task at once, so tasks are run in chunks of n_workers to cap parallelism.
+    """
+    if n_workers is None or isinstance(executor, submitit.SlurmExecutor):
+        return executor.map_array(fn, *iterables)
+
+    arg_tuples = list(zip(*iterables))
+    jobs = []
+    for i in range(0, len(arg_tuples), n_workers):
+        chunk = arg_tuples[i:i + n_workers]
+        chunk_jobs = executor.map_array(fn, *zip(*chunk))
+        _wait_for_local_jobs(chunk_jobs)
+        jobs.extend(chunk_jobs)
+    return jobs
 
 
 # ── Job functions ─────────────────────────────────────────────────────────────
@@ -346,6 +383,7 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
     pp_timeout = args.get("ibdne", {}).get("time_min") or args.get("time_min", 120)
 
     # Set up executor
+    local_workers = n_workers if local else None
     if local:
         executor = submitit.LocalExecutor(folder=f"{path}/slurm")
     else:
@@ -361,7 +399,8 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
             executor.update_parameters(mem=4096, time=20, cpus_per_task=1)
 
         ped_iters = list(range(1, n_iter + 1))
-        ped_jobs = executor.map_array(run_pedigree, [path] * len(ped_iters), ped_iters)
+        ped_jobs = map_array(executor, run_pedigree, [path] * len(ped_iters), ped_iters,
+                             n_workers=local_workers)
 
         failed = wait_for_jobs(ped_jobs)
         if failed:
@@ -402,11 +441,13 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
         ]
         if tasks:
             if len(tasks) <= max_n_slurm_jobs:
-                jobs = executor.map_array(
+                jobs = map_array(
+                    executor,
                     run_simulation,
                     [path] * len(tasks),
                     [t[0] for t in tasks],
                     [t[1] for t in tasks],
+                    n_workers=local_workers,
                 )
                 for (iter_n, chrom), job in zip(tasks, jobs):
                     sim_jobs.setdefault(iter_n, []).append(job)
@@ -425,11 +466,13 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
 
                 for i, batch in enumerate(batches):
                     print(f"Submitting batch {i+1}/{len(batches)}...")
-                    jobs = executor.map_array(
+                    jobs = map_array(
+                        executor,
                         run_simulation,
                         [path] * len(batch),
                         [t[0] for t in batch],
                         [t[1] for t in batch],
+                        n_workers=local_workers,
                     )
                     for (iter_n, chrom), job in zip(batch, jobs):
                         sim_jobs.setdefault(iter_n, []).append(job)
@@ -443,10 +486,12 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
             if not all(is_sim_complete(path, iter_n, chrom) for chrom in range(1, end_chr + 1))
         ]
         if iter_tasks:
-            jobs = executor.map_array(
+            jobs = map_array(
+                executor,
                 run_simulation_iter,
                 [path] * len(iter_tasks),
                 iter_tasks,
+                n_workers=local_workers,
             )
             for iter_n, job in zip(iter_tasks, jobs):
                 sim_jobs[iter_n] = [job]
