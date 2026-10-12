@@ -128,7 +128,7 @@ Random seeds are reproducible: each replicate's seed is derived from the run fol
 ## Repository layout
 
 ```
-├── run.py                        # main entry point: simulate / postprocess
+├── run.py                        # main entry point: simulate / postprocess / plot
 ├── setup.yaml                    # paths to external tools on your machine
 ├── environment.yaml              # conda environment
 ├── ukb_snps.pkl                  # SNP density / allele frequency profile

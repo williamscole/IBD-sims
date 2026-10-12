@@ -47,7 +47,7 @@ The pipeline simulates ancestry with msprime, optionally prepending an explicit 
 
 ## The three pipeline phases
 
-Simulation and post-processing go through run.py (subcommands: simulate, postprocess).
+Everything goes through run.py (subcommands: simulate, postprocess, plot).
 Run all commands from the repository root; configs use paths relative to it.
 Detailed docs: README.md, docs/configuration.md, docs/experiments.md, docs/extending.md.
 
@@ -80,14 +80,18 @@ If you change parameters, it creates a new numbered directory.
 Each subdirectory has its own args.yaml recording what parameters were used.
 
 ### Phase 3: plot
-Plots Ne estimates against the true demographic history. Plotting works on experiment
-directories (see docs/experiments.md):
+Plots IBDNe and HapNe-IBD Ne estimates against the true demographic history.
 
-   python ibd_sims/plot_Ne.py path/to/experiment_dir/
-   python ibd_sims/plot_Ne.py path/to/experiment_dir/ --no-vlines --save-pickle
+Commands:
+   python run.py plot path/to/run/                          # all numbered results folders
+   python run.py plot path/to/run/ --ibdne 001 003 --hapne_ibd 001
+   python run.py plot path/to/run/ --no-vlines
+   python run.py plot path/to/experiment_dir/ --save-pickle
 
-Output: {experiment_dir}/plots/{simulation}_Ne_plot.png.
-Note: `python run.py plot` is currently out of sync with plot_Ne.py and fails.
+For a run directory, output is {path}/Ne_plot.png; lines are labelled with the settings that
+differ between the numbered results folders (plus filter). For an experiment directory
+(see docs/experiments.md), output is {experiment_dir}/plots/{simulation}_Ne_plot.png.
+HapNe-LD results are not plotted.
 
 ## YAML configuration reference
 

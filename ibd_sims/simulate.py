@@ -30,7 +30,6 @@ from simulations import sim, base_seed, load_config
 from concat_tmrca import concat_tmrca
 from purple import readin_ibd
 from filter_ibd import filter_ibd, write_samples
-import plot as plot_module
 from post_process import postprocess
 from utils import apply_overrides
 
@@ -555,7 +554,8 @@ def run(yaml_path, local, n_workers, overrides=None, wait=True, max_n_slurm_jobs
     successful_post = [i for i in post_jobs if post_jobs[i] not in failed_post]
     if successful_post:
         print("Running plot...")
-        plot_module.plot(path)
+        from plot_Ne import plot_run
+        plot_run(path)
 
     print("Done.")
 

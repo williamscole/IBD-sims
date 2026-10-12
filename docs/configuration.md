@@ -37,6 +37,17 @@ Passing an existing run folder instead of a YAML file resumes that run, skipping
 | `--set local=false` | Submit the analyses to Slurm. **Post-processing runs locally by default.** |
 | `--no-wait` | With Slurm, submit jobs and exit straight away. |
 
+### `python run.py plot RUN_OR_EXPERIMENT_DIR`
+
+Plots IBDNe and HapNe-IBD estimates against the true Ne. A run folder gives `RUN_DIR/Ne_plot.png`; an experiment folder gives one plot per simulation in `EXPERIMENT_DIR/plots/`.
+
+| Option | What it does |
+|--------|--------------|
+| `--ibdne 001 003` | Only plot these numbered IBDNe results folders (default: all). |
+| `--hapne_ibd 001` | Only plot these numbered HapNe-IBD results folders (default: all). |
+| `--no-vlines` | Hide the log2(Ne) reference lines. |
+| `--save-pickle` | Experiments only: also save the plotted data to `plots/Ne_data.pkl`. |
+
 ## Simulation settings
 
 ```yaml

@@ -229,12 +229,13 @@ It also updates `postprocess.tsv`, so running `commands` again picks up anything
 ## Plotting an experiment
 
 ```bash
-python ibd_sims/plot_Ne.py my_experiment/
+python run.py plot my_experiment/
 ```
 
 This writes one plot per simulation to `my_experiment/plots/<simulation>_Ne_plot.png`, showing every IBDNe and HapNe-IBD estimate against the true Ne. Lines are coloured by tool (greens for IBDNe, oranges for HapNe-IBD) and labelled with the analysis settings from `postprocess.tsv`. With more than 10 replicates, a 5th–95th percentile band is drawn. Replicates whose largest Ne estimate is over 100× the median are left out as outliers.
 
 | Option | What it does |
 |--------|--------------|
+| `--ibdne 001 003` / `--hapne_ibd 001` | Only plot these numbered results folders. |
 | `--no-vlines` | Hide the log2(Ne) reference lines. |
 | `--save-pickle` | Also save the plotted data to `plots/Ne_data.pkl`, for re-plotting in a notebook. |

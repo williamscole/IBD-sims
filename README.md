@@ -184,13 +184,19 @@ Every setting for every analysis is in the [configuration reference](docs/config
 
 ## Plotting
 
-Plotting works on [experiments](docs/experiments.md) (a folder of related runs):
+Once IBDNe or HapNe-IBD has run, plot the estimates against the true Ne:
 
 ```bash
-python ibd_sims/plot_Ne.py my_experiment/
+python run.py plot path/to/run_folder/
 ```
 
-This saves one plot per simulation in `my_experiment/plots/`, comparing every IBDNe and HapNe-IBD estimate with the true Ne. See [plotting an experiment](docs/experiments.md#plotting-an-experiment) for options.
+This saves `Ne_plot.png` in the run folder, with IBDNe on the left and HapNe-IBD on the right. Each numbered results folder (`ibdne/001`, `ibdne/002`, ...) is one line, labelled with the settings that differ between them (e.g. `filter=related`). To plot only some of them:
+
+```bash
+python run.py plot path/to/run_folder/ --ibdne 001 003 --hapne_ibd 001
+```
+
+Point `run.py plot` at an [experiment](docs/experiments.md) folder instead to get one plot per simulation in `my_experiment/plots/`. Add `--no-vlines` to hide the log2(Ne) reference lines.
 
 ## Understanding the output
 
@@ -205,6 +211,7 @@ quickstart/quickstart/
 ├── iter1_related.txt    # people chosen for the "related" subset (also _random, _unrelated)
 ├── ibdne/001/           # results of each analysis run, in numbered folders
 ├── ibd_summary/001/
+├── Ne_plot.png          # from run.py plot
 ├── slurm/               # job logs: look here first if something fails
 └── errors/
 ```
@@ -272,7 +279,6 @@ pip install hapne==1.20240807 pandas-plink   # only needed for HapNe
 
 ## Known limitations and to-do
 
-- `python run.py plot` is out of date and fails; use `python ibd_sims/plot_Ne.py` on an experiment folder instead.
 - HapNe-LD is slow and may not work.
 - `tskit_ibd: true` is not chosen automatically when no hap-ibd jar is configured.
 - `ibd_sims/experiment.py commands` has no global `--max-jobs`, so with `--no-wait` (its default) a large experiment can exceed a cluster's per-user Slurm queue limit.
