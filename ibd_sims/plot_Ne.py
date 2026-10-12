@@ -312,6 +312,9 @@ def _results_to_data_dict(
 
     Each (method, rep) combination becomes one label; iters become the list.
     Columns are normalised to GEN and NE for the shared plotting logic.
+
+    HapNe reports Ne in haploid units; IBDNe and the simulated truth are
+    diploid, so HapNe estimates are divided by 2.
     """
     data_dict: dict[str, list[pd.DataFrame]] = {}
 
@@ -339,6 +342,7 @@ def _results_to_data_dict(
             dfs = [
                 iter_df[["time", "ne_q50"]]
                     .rename(columns={"time": "GEN", "ne_q50": "NE"})
+                    .assign(NE=lambda d: d["NE"] / 2)  # haploid -> diploid
                     .reset_index(drop=True)
                 for _, iter_df in rep_group.groupby("iter")
             ]
@@ -417,10 +421,12 @@ def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False,
     #       }
     #     },
     #     "plot_kwargs": {"log_scale": bool, "xlim": tuple, "vlines": bool},
+    #     "hapne_halved": True,   # HapNe NE already diploid (see ne_results.py)
     #   }
     pickle_payload: dict = {
         "demos": {},
         "plot_kwargs": {"log_scale": True, "xlim": (0, 50), "vlines": vlines},
+        "hapne_halved": True,
     }
 
     for demo in sorted(demos):

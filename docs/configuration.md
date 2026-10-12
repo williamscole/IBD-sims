@@ -174,7 +174,7 @@ ibdne:
   time_min: 120
 ```
 
-**HapNe-IBD** (`hapne_ibd`): estimates Ne over time with HapNe. Needs the [HapNe patches](../README.md#optional-hapne).
+**HapNe-IBD** (`hapne_ibd`): estimates Ne over time with HapNe. Needs the [HapNe patches](../README.md#optional-hapne). HapNe reports haploid Ne, so plots (and `ne_results.load_ne_data`) divide its estimates by 2 to match IBDNe and the truth.
 
 ```yaml
 hapne_ibd:
