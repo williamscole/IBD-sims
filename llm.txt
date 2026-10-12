@@ -86,12 +86,20 @@ Commands:
    python run.py plot path/to/run/                          # all numbered results folders
    python run.py plot path/to/run/ --ibdne 001 003 --hapne_ibd 001
    python run.py plot path/to/run/ --no-vlines
-   python run.py plot path/to/experiment_dir/ --save-pickle
+   python run.py plot path/to/run/ --save-pickle             # also writes {path}/Ne_data.pkl
+   python run.py plot path/to/experiment_dir/ --save-pickle  # also writes plots/Ne_data.pkl
 
-For a run directory, output is {path}/Ne_plot.png; lines are labelled with the settings that
-differ between the numbered results folders (plus filter). For an experiment directory
-(see docs/experiments.md), output is {experiment_dir}/plots/{simulation}_Ne_plot.png.
-HapNe-LD results are not plotted.
+For a run directory, output is {path}/Ne_plot.png; lines are labelled with filter (null shown as
+"unfiltered"), filtersamples (IBDNe), and any other setting that differs between the numbered
+results folders. For an experiment directory (see docs/experiments.md), output is
+{experiment_dir}/plots/{simulation}_Ne_plot.png. HapNe-LD results are not plotted.
+HapNe estimates are halved (haploid -> diploid) to match IBDNe and the truth.
+
+Ne_data.pkl: load with ibd_sims.ne_results.load_ne_data(dir) (dir = run or experiment folder).
+Structure: {"demos": {name: {"records": [...], "truth_df": df}}, "plot_kwargs": {...},
+"hapne_halved": True}. A single run's pickle has exactly one entry under "demos". Each record
+has demo, method, rep, label settings (filter, filtersamples, ...) and dfs (per-iteration
+DataFrames with GEN and NE). ne_results.compute_rmse_table(data) works on either.
 
 ## YAML configuration reference
 

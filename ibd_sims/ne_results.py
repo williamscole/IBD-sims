@@ -13,16 +13,25 @@ import numpy as np
 import pandas as pd
 
 
-def load_ne_data(exp_dir, pickle_name="plots/Ne_data.pkl", halve_hapne=True):
+def load_ne_data(exp_dir, pickle_name=None, halve_hapne=True):
     """
-    Load [exp_dir]/plots/Ne_data.pkl (written by plot_Ne.py --save-pickle).
+    Load the Ne_data.pkl written by `run.py plot --save-pickle`.
+
+    exp_dir may be an experiment directory ([exp_dir]/plots/Ne_data.pkl) or a
+    single run directory ([exp_dir]/Ne_data.pkl, with one entry under "demos").
+    Pass pickle_name (relative to exp_dir) to load a different file.
 
     HapNe reports Ne in haploid units; IBDNe and the simulated truth are diploid.
     With halve_hapne=True (default) every HapNe record's NE column is divided by 2.
     The payload gets hapne_halved=True afterwards, so loading a pickle regenerated
     with the fix applied at the source cannot halve twice.
     """
-    with open(Path(exp_dir) / pickle_name, "rb") as fh:
+    exp_dir = Path(exp_dir)
+    if pickle_name is None:
+        is_experiment = (exp_dir / "plots" / "Ne_data.pkl").exists()
+        pickle_name = "plots/Ne_data.pkl" if is_experiment else "Ne_data.pkl"
+
+    with open(exp_dir / pickle_name, "rb") as fh:
         data = pickle.load(fh)
 
     if halve_hapne and not data.get("hapne_halved", False):

@@ -378,6 +378,43 @@ def _plot_demo(data_dict: dict, args_path: Path, out_path: Path, vlines: bool):
     return truth_df
 
 
+def _new_pickle_payload(vlines: bool) -> dict:
+    """
+    Empty payload for the optional Ne_data.pkl output (see --save-pickle).
+
+    Structure:
+      {
+        "demos": {
+          demo_name: {
+            "records":  [record, ...],         # see _data_dict_to_records
+            "truth_df": pd.DataFrame | None,   # GEN / NE columns
+          }
+        },
+        "plot_kwargs": {"log_scale": bool, "xlim": tuple, "vlines": bool},
+        "hapne_halved": True,   # HapNe NE already diploid (see ne_results.py)
+      }
+    A single run's pickle has the same structure with exactly one demo.
+    """
+    return {
+        "demos": {},
+        "plot_kwargs": {"log_scale": True, "xlim": (0, 50), "vlines": vlines},
+        "hapne_halved": True,
+    }
+
+
+def _add_demo_to_payload(payload: dict, demo: str, data_dict: dict, truth_df) -> None:
+    payload["demos"][demo] = {
+        "records":  _data_dict_to_records(data_dict),
+        "truth_df": truth_df,
+    }
+
+
+def _save_pickle(payload: dict, pkl_path: Path) -> None:
+    with open(pkl_path, "wb") as fh:
+        pickle.dump(payload, fh)
+    print(f"Pickle saved: {pkl_path}")
+
+
 def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False,
          ibdne: list[str] | None = None, hapne_ibd: list[str] | None = None) -> None:
     """
@@ -388,7 +425,7 @@ def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False,
     ----------
     exp_dir      : path to the experiment directory (passed to load_experiment_results)
     vlines       : draw log2-Ne vertical reference lines (only when truth is constant)
-    save_pickle  : if True, write [exp_dir]/plots/plot_data.pkl with all data
+    save_pickle  : if True, write [exp_dir]/plots/Ne_data.pkl with all data
                    needed to reproduce the plots in a Jupyter notebook
     ibdne        : only plot these numbered IBDNe directories (default: all)
     hapne_ibd    : only plot these numbered HapNe-IBD directories (default: all)
@@ -411,23 +448,7 @@ def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False,
         print("No results found.")
         return
 
-    # Collected for optional pickle output.
-    # Structure:
-    #   {
-    #     "demos": {
-    #       demo_name: {
-    #         "data_dict": {label: [df, ...]},   # GEN / NE columns
-    #         "truth_df":  pd.DataFrame | None,  # GEN / NE columns
-    #       }
-    #     },
-    #     "plot_kwargs": {"log_scale": bool, "xlim": tuple, "vlines": bool},
-    #     "hapne_halved": True,   # HapNe NE already diploid (see ne_results.py)
-    #   }
-    pickle_payload: dict = {
-        "demos": {},
-        "plot_kwargs": {"log_scale": True, "xlim": (0, 50), "vlines": vlines},
-        "hapne_halved": True,
-    }
+    pickle_payload = _new_pickle_payload(vlines)
 
     for demo in sorted(demos):
         print(f"\nPlotting demo: {demo}")
@@ -441,19 +462,14 @@ def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False,
                               plots_dir / f"{demo}_Ne_plot.png", vlines)
 
         if save_pickle:
-            pickle_payload["demos"][demo] = {
-                "records":  _data_dict_to_records(data_dict),
-                "truth_df": truth_df,
-            }
+            _add_demo_to_payload(pickle_payload, demo, data_dict, truth_df)
 
     if save_pickle:
-        pkl_path = plots_dir / "Ne_data.pkl"
-        with open(pkl_path, "wb") as fh:
-            pickle.dump(pickle_payload, fh)
-        print(f"\nPickle saved: {pkl_path}")
+        print()
+        _save_pickle(pickle_payload, plots_dir / "Ne_data.pkl")
 
 
-def plot_run(run_dir: str, vlines: bool = True,
+def plot_run(run_dir: str, vlines: bool = True, save_pickle: bool = False,
              ibdne: list[str] | None = None, hapne_ibd: list[str] | None = None) -> None:
     """
     Plot the Ne estimates of a single simulation run against the truth,
@@ -463,6 +479,8 @@ def plot_run(run_dir: str, vlines: bool = True,
     ----------
     run_dir      : path to a run directory (contains args.yaml)
     vlines       : draw log2-Ne vertical reference lines (only when truth is constant)
+    save_pickle  : if True, write [run_dir]/Ne_data.pkl, with the same structure
+                   as an experiment's pickle but a single entry under "demos"
     ibdne        : only plot these numbered IBDNe directories (default: all)
     hapne_ibd    : only plot these numbered HapNe-IBD directories (default: all)
     """
@@ -476,7 +494,12 @@ def plot_run(run_dir: str, vlines: bool = True,
         print(f"No IBDNe or HapNe-IBD results found in {run_dir}.")
         return
 
-    _plot_demo(data_dict, run_dir / "args.yaml", run_dir / "Ne_plot.png", vlines)
+    truth_df = _plot_demo(data_dict, run_dir / "args.yaml", run_dir / "Ne_plot.png", vlines)
+
+    if save_pickle:
+        pickle_payload = _new_pickle_payload(vlines)
+        _add_demo_to_payload(pickle_payload, run_dir.name, data_dict, truth_df)
+        _save_pickle(pickle_payload, run_dir / "Ne_data.pkl")
 
 
 def is_experiment_dir(path) -> bool:

@@ -46,7 +46,7 @@ Plots IBDNe and HapNe-IBD estimates against the true Ne. A run folder gives `RUN
 | `--ibdne 001 003` | Only plot these numbered IBDNe results folders (default: all). |
 | `--hapne_ibd 001` | Only plot these numbered HapNe-IBD results folders (default: all). |
 | `--no-vlines` | Hide the log2(Ne) reference lines. |
-| `--save-pickle` | Experiments only: also save the plotted data to `plots/Ne_data.pkl`. |
+| `--save-pickle` | Also save the plotted data to `Ne_data.pkl` (`RUN_DIR/Ne_data.pkl`, or `EXPERIMENT_DIR/plots/Ne_data.pkl`). Load it with `ne_results.load_ne_data(dir)`. |
 
 ## Simulation settings
 

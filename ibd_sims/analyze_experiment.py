@@ -185,8 +185,12 @@ _NON_LABEL_SETTINGS = {"path", "object", "dir_name", "local", "workers", "mem_gb
 def _rep_settings(run_dir: Path, method: str) -> pd.DataFrame:
     """
     Return one row per numbered rep directory of `method` in a run, with the
-    settings worth showing in a plot label: `filter`, plus any setting that
-    differs between reps. Settings are read from each rep's args.yaml.
+    settings worth showing in a plot label: `filter` (null -> "unfiltered"),
+    `filtersamples` if the method has it, plus any setting that differs
+    between reps. Settings are read from each rep's args.yaml.
+
+    `filter` and `filtersamples` are always kept so that records match the
+    criteria used by ne_results.compute_rmse_table.
     """
     reps = {}
     method_dir = run_dir / method
@@ -202,10 +206,14 @@ def _rep_settings(run_dir: Path, method: str) -> pd.DataFrame:
                 for k, v in cfg.items() if k not in _NON_LABEL_SETTINGS
             }
 
+    for cfg in reps.values():
+        if str(cfg.get("filter")).lower() in ("none", "null", ""):
+            cfg["filter"] = "unfiltered"
+
     keys = sorted(set().union(*reps.values())) if reps else []
     label_keys = [
         k for k in keys
-        if k == "filter" or len({repr(r.get(k)) for r in reps.values()}) > 1
+        if k in ("filter", "filtersamples") or len({repr(r.get(k)) for r in reps.values()}) > 1
     ]
     rows = [{"rep": rep, **{k: cfg.get(k) for k in label_keys}} for rep, cfg in reps.items()]
     return pd.DataFrame(rows, columns=["rep"] + label_keys)

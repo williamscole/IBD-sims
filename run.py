@@ -75,9 +75,7 @@ def cmd_plot(args):
         plot(path, vlines=not args.no_vlines, save_pickle=args.save_pickle,
              ibdne=args.ibdne, hapne_ibd=args.hapne_ibd)
     elif (path / "args.yaml").exists():
-        if args.save_pickle:
-            print("Note: --save-pickle only applies to experiment directories.")
-        plot_run(path, vlines=not args.no_vlines,
+        plot_run(path, vlines=not args.no_vlines, save_pickle=args.save_pickle,
                  ibdne=args.ibdne, hapne_ibd=args.hapne_ibd)
     else:
         sys.exit(f"Error: {path} is neither a run directory (with args.yaml) "
@@ -130,7 +128,7 @@ def main():
     p_plot.add_argument("--no-vlines", action="store_true", default=False,
         help="Suppress log2-Ne vertical reference lines")
     p_plot.add_argument("--save-pickle", action="store_true", default=False,
-        help="Experiments only: also save the plotted data to plots/Ne_data.pkl")
+        help="Also save the plotted data to Ne_data.pkl (plots/Ne_data.pkl for experiments)")
     p_plot.set_defaults(func=cmd_plot)
 
     args = parser.parse_args()

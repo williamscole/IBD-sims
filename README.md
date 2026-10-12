@@ -190,13 +190,22 @@ Once IBDNe or HapNe-IBD has run, plot the estimates against the true Ne:
 python run.py plot path/to/run_folder/
 ```
 
-This saves `Ne_plot.png` in the run folder, with IBDNe on the left and HapNe-IBD on the right. Each numbered results folder (`ibdne/001`, `ibdne/002`, ...) is one line, labelled with the settings that differ between them (e.g. `filter=related`). To plot only some of them:
+This saves `Ne_plot.png` in the run folder, with IBDNe on the left and HapNe-IBD on the right. Each numbered results folder (`ibdne/001`, `ibdne/002`, ...) is one line, labelled with its `filter` (and `filtersamples` for IBDNe) plus any other setting that differs between folders, e.g. `filter=related | filtersamples=False`. To plot only some of them:
 
 ```bash
 python run.py plot path/to/run_folder/ --ibdne 001 003 --hapne_ibd 001
 ```
 
 Point `run.py plot` at an [experiment](docs/experiments.md) folder instead to get one plot per simulation in `my_experiment/plots/`. Add `--no-vlines` to hide the log2(Ne) reference lines.
+
+**Using the numbers yourself:** add `--save-pickle` to also save the plotted data as `Ne_data.pkl` (in the run folder, or in `plots/` for an experiment). Load it in Python with:
+
+```python
+from ibd_sims.ne_results import load_ne_data
+data = load_ne_data("path/to/run_folder")   # or an experiment folder
+```
+
+`data["demos"]` has one entry per simulation (exactly one for a single run). Each entry holds `records` (one per plotted line, with its settings and a per-iteration list of `GEN`/`NE` tables) and `truth_df` (the true Ne).
 
 ## Understanding the output
 
