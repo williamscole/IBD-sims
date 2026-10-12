@@ -68,14 +68,20 @@ def cmd_postprocess(args):
 
 
 def cmd_plot(args):
-    from plot_Ne import plot
-    plot(
-        path=args.path,
-        ibdne=args.ibdne,
-        hapne_ibd=args.hapne_ibd,
-        hapne_ld=args.hapne_ld,
-        vlines=not args.no_vlines,
-    )
+    from plot_Ne import is_experiment_dir, plot, plot_run
+
+    path = Path(args.path)
+    if is_experiment_dir(path):
+        plot(path, vlines=not args.no_vlines, save_pickle=args.save_pickle,
+             ibdne=args.ibdne, hapne_ibd=args.hapne_ibd)
+    elif (path / "args.yaml").exists():
+        if args.save_pickle:
+            print("Note: --save-pickle only applies to experiment directories.")
+        plot_run(path, vlines=not args.no_vlines,
+                 ibdne=args.ibdne, hapne_ibd=args.hapne_ibd)
+    else:
+        sys.exit(f"Error: {path} is neither a run directory (with args.yaml) "
+                 "nor an experiment directory (with yaml_files/yaml_files.txt)")
 
 
 def main():
@@ -116,15 +122,15 @@ def main():
     # ── plot ──────────────────────────────────────────────────────────────
     p_plot = sub.add_parser("plot", help="Plot Ne estimates vs truth")
     p_plot.add_argument("path",
-        help="Top-level run directory (contains args.yaml)")
+        help="Run directory (contains args.yaml) or experiment directory")
     p_plot.add_argument("--ibdne", nargs="+", metavar="RUN", default=None,
-        help="IBDNe subdirectory numbers (e.g. 001 003)")
+        help="Only plot these IBDNe subdirectory numbers (e.g. 001 003; default: all)")
     p_plot.add_argument("--hapne_ibd", nargs="+", metavar="RUN", default=None,
-        help="HapNe-IBD subdirectory numbers")
-    p_plot.add_argument("--hapne_ld", nargs="+", metavar="RUN", default=None,
-        help="HapNe-LD subdirectory numbers")
+        help="Only plot these HapNe-IBD subdirectory numbers (default: all)")
     p_plot.add_argument("--no-vlines", action="store_true", default=False,
         help="Suppress log2-Ne vertical reference lines")
+    p_plot.add_argument("--save-pickle", action="store_true", default=False,
+        help="Experiments only: also save the plotted data to plots/Ne_data.pkl")
     p_plot.set_defaults(func=cmd_plot)
 
     args = parser.parse_args()

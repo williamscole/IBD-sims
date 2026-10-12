@@ -3,10 +3,12 @@ plot_Ne.py — plot IBDNe and/or HapNe-IBD Ne estimates against the truth.
 
 Usage
 -----
+python run.py plot path/to/run_or_experiment_dir
 python plot_Ne.py path/to/experiment_dir
 
-Loads all results via load_experiment_results() and produces one Ne_plot.png
-per demographic scenario found in the experiment directory.
+For an experiment directory, loads all results via load_experiment_results()
+and produces one Ne_plot.png per demographic scenario in [exp_dir]/plots/.
+For a single run directory, plot_run() writes [run_dir]/Ne_plot.png.
 """
 
 import argparse
@@ -21,7 +23,7 @@ import seaborn as sns
 import yaml
 
 from simulations import DemographicSetup
-from analyze_experiment import load_experiment_results
+from analyze_experiment import load_experiment_results, load_run_results
 from demography import euro_bottleneck
 
 QUEBEC_FOUNDING_GEN = 17  # BALSAC pedigree depth; Euro demography picks up here
@@ -348,7 +350,32 @@ def _results_to_data_dict(
 
 # ── Main entry ────────────────────────────────────────────────────────────────
 
-def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False) -> None:
+def _select_reps(df: pd.DataFrame, reps: list[str] | None) -> pd.DataFrame:
+    """Keep only the given numbered rep directories (e.g. ["001", "003"])."""
+    if reps is None or df.empty:
+        return df
+    reps = [f"{int(r):03d}" for r in reps]
+    return df[df["rep"].isin(reps)]
+
+
+def _plot_demo(data_dict: dict, args_path: Path, out_path: Path, vlines: bool):
+    """Plot one demographic scenario against its truth; return truth_df."""
+    truth_df = None
+    if args_path.exists():
+        yargs = yaml.safe_load(open(args_path))
+        truth_df = get_truth(yargs)
+    else:
+        print(f"  [truth] No args.yaml found at {args_path}")
+
+    fig, ax = plot_ne_estimates(data_dict, truth_df=truth_df, vlines=vlines)
+    plt.savefig(out_path, dpi=600)
+    print(f"  Saved: {out_path}")
+    plt.close(fig)
+    return truth_df
+
+
+def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False,
+         ibdne: list[str] | None = None, hapne_ibd: list[str] | None = None) -> None:
     """
     Load all Ne estimates from an experiment directory and produce one
     Ne_plot.png per demographic scenario, saved into [exp_dir]/plots/.
@@ -359,14 +386,16 @@ def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False) -> None:
     vlines       : draw log2-Ne vertical reference lines (only when truth is constant)
     save_pickle  : if True, write [exp_dir]/plots/plot_data.pkl with all data
                    needed to reproduce the plots in a Jupyter notebook
+    ibdne        : only plot these numbered IBDNe directories (default: all)
+    hapne_ibd    : only plot these numbered HapNe-IBD directories (default: all)
     """
     exp_dir = Path(exp_dir)
     plots_dir = exp_dir / "plots"
     plots_dir.mkdir(exist_ok=True)
 
     results = load_experiment_results(exp_dir)
-    ibdne_df  = results["ibdne"]
-    hapne_df  = results["hapne_ibd"]
+    ibdne_df  = _select_reps(results["ibdne"], ibdne)
+    hapne_df  = _select_reps(results["hapne_ibd"], hapne_ibd)
 
     demos = set()
     if not ibdne_df.empty:
@@ -402,20 +431,8 @@ def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False) -> None:
             print(f"  No data for '{demo}', skipping.")
             continue
 
-        # Load truth from the demo's args.yaml
-        demo_args_path = exp_dir / demo / "args.yaml"
-        truth_df = None
-        if demo_args_path.exists():
-            yargs = yaml.safe_load(open(demo_args_path))
-            truth_df = get_truth(yargs)
-        else:
-            print(f"  [truth] No args.yaml found at {demo_args_path}")
-
-        fig, ax = plot_ne_estimates(data_dict, truth_df=truth_df, vlines=vlines)
-        out_path = plots_dir / f"{demo}_Ne_plot.png"
-        plt.savefig(out_path, dpi=600)
-        print(f"  Saved: {out_path}")
-        plt.close(fig)
+        truth_df = _plot_demo(data_dict, exp_dir / demo / "args.yaml",
+                              plots_dir / f"{demo}_Ne_plot.png", vlines)
 
         if save_pickle:
             pickle_payload["demos"][demo] = {
@@ -428,6 +445,37 @@ def plot(exp_dir: str, vlines: bool = True, save_pickle: bool = False) -> None:
         with open(pkl_path, "wb") as fh:
             pickle.dump(pickle_payload, fh)
         print(f"\nPickle saved: {pkl_path}")
+
+
+def plot_run(run_dir: str, vlines: bool = True,
+             ibdne: list[str] | None = None, hapne_ibd: list[str] | None = None) -> None:
+    """
+    Plot the Ne estimates of a single simulation run against the truth,
+    saved as [run_dir]/Ne_plot.png.
+
+    Parameters
+    ----------
+    run_dir      : path to a run directory (contains args.yaml)
+    vlines       : draw log2-Ne vertical reference lines (only when truth is constant)
+    ibdne        : only plot these numbered IBDNe directories (default: all)
+    hapne_ibd    : only plot these numbered HapNe-IBD directories (default: all)
+    """
+    run_dir = Path(run_dir)
+    results = load_run_results(run_dir)
+    ibdne_df = _select_reps(results["ibdne"], ibdne)
+    hapne_df = _select_reps(results["hapne_ibd"], hapne_ibd)
+
+    data_dict = _results_to_data_dict(ibdne_df, hapne_df, run_dir.name)
+    if not data_dict:
+        print(f"No IBDNe or HapNe-IBD results found in {run_dir}.")
+        return
+
+    _plot_demo(data_dict, run_dir / "args.yaml", run_dir / "Ne_plot.png", vlines)
+
+
+def is_experiment_dir(path) -> bool:
+    """True if path is an experiment directory (created by experiment.py init)."""
+    return (Path(path) / "yaml_files" / "yaml_files.txt").exists()
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 

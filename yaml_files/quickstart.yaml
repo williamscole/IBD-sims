@@ -1,0 +1,65 @@
+# Quick-start config: a tiny run that needs no external tools (no Java, no jars).
+#
+#   python run.py simulate yaml_files/quickstart.yaml --local --workers 2
+#
+# Simulates 200 people on two 50 Mb chromosomes, reads IBD segments straight
+# from the simulated genealogy, then writes a small IBD summary table.
+# Takes a few minutes on a laptop. Output goes to quickstart/quickstart/.
+
+# ── Where to write output ─────────────────────────────────────────────────────
+base_dir: quickstart        # parent folder for this run's output
+label: quickstart           # run folder name (gets _001, _002, ... if it exists)
+keep_all_files: false
+
+# ── What to simulate ──────────────────────────────────────────────────────────
+iter: 1                     # number of independent replicates
+samples: 200                # number of diploid individuals
+end_chr: 2                  # 2 = two 50 Mb chromosomes (30 = thirty 100 Mb; 22 = human autosomes)
+tskit_ibd: true             # call IBD from the tree sequence (no VCF, no hap-ibd)
+
+custom_demo:                # demographic history: constant Ne = 10,000
+  path: ibd_sims/demography.py
+  object: constant_Ne
+
+custom_sim:
+  path: null
+  object: null
+
+pedigree:
+  pedigree_mode: false      # plain coalescent (set true for a Wright-Fisher pedigree)
+  mating: di                # "di" = random mating, "mono" = monogamous
+  gen_end: 25
+  pedigree_file: null
+
+# ── Computational resources (simulation) ──────────────────────────────────────
+gb: 4                       # memory per simulation job (GB)
+sim_min: 20                 # time limit per simulation job (minutes)
+nthreads: 1
+
+# ── Analyses to run after simulating ──────────────────────────────────────────
+post_process: ibd_summary   # e.g. ibdne,ibd_summary (IBDNe needs ibdne_jar in setup.yaml)
+
+ibd_summary:
+  path: post_modules.py
+  object: PostProcessIBDSummary
+  mincm: 2
+  filters: [null, related, unrelated]
+  workers: 1
+  mem_gb: 1
+  time_min: 10
+
+ibdne:
+  path: post_modules.py
+  object: PostProcessIBDNe
+  filter: null
+  filtersamples: false
+  mincm: 2
+  trimcm: 0.2
+  gmin: 1
+  gmax: 300
+  nboots: 0
+  nits: 100
+  npairs: 0
+  workers: 2
+  mem_gb: 4
+  time_min: 10
