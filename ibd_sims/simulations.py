@@ -121,7 +121,7 @@ class Simulation:
                 init_state = None
                 init_samples = args["samples"]
 
-            print("Starting sim now (chrom={chrom})") # TODO: remove
+            print(f"Starting sim now (chrom={chrom})") # TODO: remove
             t1 = time.time()
             ts = msprime.sim_ancestry(samples={"pop_0": init_samples} if init_samples else None,
                               initial_state=init_state,
